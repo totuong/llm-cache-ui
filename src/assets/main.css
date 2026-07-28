@@ -1,0 +1,278 @@
+@import "tailwindcss";
+@import "primeicons/primeicons.css";
+
+/* 1. Define Tailwind Color Tokens from Custom CSS variables */
+@theme {
+  --color-bg-app: var(--bg-app);
+  --color-bg-side: var(--bg-side);
+  --color-bg-card: var(--bg-card);
+  --color-bg-inp: var(--bg-inp);
+  --color-bg-head: var(--bg-head);
+  --color-border-p: var(--border-p);
+  --color-border-s: var(--border-s);
+  --color-tx-p: var(--tx-p);
+  --color-tx-s: var(--tx-s);
+  --color-tx-m: var(--tx-m);
+  --color-bg-btn-hover: var(--bg-btn-hover);
+  --color-tx-btn-hover: var(--tx-btn-hover);
+
+  --color-hust-red: var(--hust-red);
+  --color-hust-red-hover: var(--hust-red-hover);
+  --color-hust-red-dark: var(--hust-red-dark);
+  --color-hust-gold: var(--hust-gold);
+}
+
+/* 2. Theme Token Values */
+:root {
+  /* Default: Dark Theme */
+  --bg-app: #09090b;
+  /* zinc-950 */
+  --bg-side: #09090b;
+  /* zinc-950 */
+  --bg-card: #09090b;
+  /* zinc-950 */
+  --bg-inp: #18181b;
+  /* zinc-900 */
+  --bg-head: #09090b;
+  /* zinc-950 */
+  --border-p: #18181b;
+  /* zinc-900 */
+  --border-s: #27272a;
+  /* zinc-800 */
+  --tx-p: #f4f4f5;
+  /* zinc-100 */
+  --tx-s: #a1a1aa;
+  /* zinc-400 */
+  --tx-m: #52525b;
+  /* zinc-600 */
+  --bg-btn-hover: #18181b;
+  /* zinc-900 */
+  --tx-btn-hover: #ffffff;
+
+  --hust-red: #a81a1a;
+  --hust-red-hover: #c42424;
+  --hust-red-dark: #7a1010;
+  --hust-gold: #c5a059;
+}
+
+.light-mode {
+  /* Light Theme Overrides */
+  --bg-app: #fafafa;
+  /* zinc-50 */
+  --bg-side: #ffffff;
+  /* white */
+  --bg-card: #ffffff;
+  /* white */
+  --bg-inp: #ffffff;
+  /* white */
+  --bg-head: #ffffff;
+  /* white */
+  --border-p: #e4e4e7;
+  /* zinc-200 */
+  --border-s: #f4f4f5;
+  /* zinc-100 */
+  --tx-p: #18181b;
+  /* zinc-900 */
+  --tx-s: #52525b;
+  /* zinc-600 */
+  --tx-m: #71717a;
+  /* zinc-500 */
+  --bg-btn-hover: #f4f4f5;
+  /* zinc-100 */
+  --tx-btn-hover: #000000;
+}
+
+/* 3. Base Custom Resets */
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: var(--bg-app);
+  color: var(--tx-p);
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Custom Scrollbar dynamic theme binding */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-s);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--tx-m);
+}
+
+/* 4. Global PrimeVue Theming Integration using CSS variables */
+.p-dialog {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-p) !important;
+  color: var(--tx-p) !important;
+}
+
+.p-dialog-header {
+  background: var(--bg-card) !important;
+  color: var(--tx-p) !important;
+  border-bottom: 1px solid var(--border-p) !important;
+  padding: 1rem 1.5rem !important;
+}
+
+.p-dialog-content {
+  background: var(--bg-card) !important;
+  color: var(--tx-p) !important;
+  padding: 1.5rem !important;
+}
+
+.p-dialog-footer {
+  background: var(--bg-card) !important;
+  border-top: 1px solid var(--border-p) !important;
+  padding: 1rem 1.5rem !important;
+}
+
+.p-select {
+  background: var(--bg-inp) !important;
+  border: 1px solid var(--border-p) !important;
+  color: var(--tx-p) !important;
+}
+
+.p-select-label {
+  color: var(--tx-p) !important;
+}
+
+.p-select-dropdown {
+  color: var(--tx-s) !important;
+}
+
+.p-select-overlay {
+  background: var(--bg-inp) !important;
+  border: 1px solid var(--border-p) !important;
+  color: var(--tx-p) !important;
+}
+
+.p-select-option {
+  color: var(--tx-p) !important;
+}
+
+.p-select-option:hover {
+  background: var(--bg-btn-hover) !important;
+}
+
+.p-select-option.p-highlight {
+  background: var(--hust-red) !important;
+  color: #ffffff !important;
+}
+
+/* Slider component integration */
+.p-slider {
+  background: var(--border-s) !important;
+}
+
+.p-slider-handle {
+  background: var(--hust-red) !important;
+  border-color: var(--hust-red) !important;
+}
+
+.p-slider-range {
+  background: var(--hust-red) !important;
+}
+
+/* InputNumber component integration */
+.p-inputnumber-input {
+  background: var(--bg-inp) !important;
+  color: var(--tx-p) !important;
+  border-color: var(--border-p) !important;
+}
+
+.p-inputnumber-button {
+  background: var(--bg-btn-hover) !important;
+  border-color: var(--border-p) !important;
+  color: var(--tx-s) !important;
+}
+
+.p-inputnumber-button:hover {
+  background: var(--border-s) !important;
+  color: var(--tx-p) !important;
+}
+
+/* Shimmer animation for chat typing */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, var(--border-p) 25%, var(--border-s) 50%, var(--border-p) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* 5. Inputs & Dialog Forms General Theme Integration */
+.p-inputtext,
+input.p-inputtext,
+.p-password-input,
+.p-password input,
+input {
+  background-color: var(--bg-inp) !important;
+  color: var(--tx-p) !important;
+  border: 1px solid var(--border-p) !important;
+}
+
+.p-inputtext::placeholder,
+input::placeholder {
+  color: var(--tx-m) !important;
+}
+
+.p-dialog button {
+  background-color: var(--bg-inp) !important;
+  border: 1px solid var(--border-p) !important;
+  color: var(--tx-p) !important;
+}
+
+.p-dialog button:hover {
+  background-color: var(--bg-btn-hover) !important;
+  color: var(--tx-btn-hover) !important;
+}
+
+.p-dialog button.bg-hust-red {
+  background-color: var(--hust-red) !important;
+  color: #ffffff !important;
+  border: none !important;
+}
+.p-dialog button.bg-hust-red:hover {
+  background-color: var(--hust-red-hover) !important;
+}
+
+.p-dialog a {
+  color: var(--hust-gold) !important;
+}
+.p-dialog a:hover {
+  text-decoration: underline !important;
+}
+.p-dialog span.h-px {
+  background-color: var(--border-p) !important;
+}
+
+/* Scoped font-size patch for inline chat rename textfield */
+.rename-input {
+  font-size: 11px !important;
+  padding: 2px 6px !important;
+  height: 24px !important;
+  line-height: 1.2 !important;
+}
