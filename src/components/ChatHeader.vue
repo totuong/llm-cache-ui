@@ -21,14 +21,18 @@ function handleClearChat() {
     chatStore.clearCurrentSession()
   }
 }
+
+function toggleApiMode() {
+  chatStore.apiMode = chatStore.apiMode === 'live' ? 'mock' : 'live'
+  chatStore.checkHealth()
+}
 </script>
 
 <template>
-  <header class="h-14 border-b border-border-p bg-bg-head px-4 flex items-center justify-between shrink-0 select-none text-tx-p">
+  <header class="h-14 border-b border-border-p bg-bg-head px-4 flex items-center justify-between shrink-0 select-none text-tx-p shadow-sm">
     
-    <!-- Left side: Toggle & Model Selector -->
+    <!-- Left side: Sidebar Toggle & Model Selector -->
     <div class="flex items-center gap-3">
-      <!-- Sidebar toggle -->
       <button
         class="text-tx-s hover:text-tx-p hover:bg-bg-btn-hover p-1.5 rounded transition-colors cursor-pointer"
         v-tooltip.bottom="langStore.t('toggleSidebar')"
@@ -37,54 +41,71 @@ function handleClearChat() {
         <i class="pi pi-bars text-sm"></i>
       </button>
 
-      <!-- PrimeVue Select for Model choice -->
+      <!-- Select Model -->
       <div class="flex items-center gap-1">
         <Select
           v-model="chatStore.selectedModelId"
           :options="chatStore.models"
           optionLabel="name"
           optionValue="id"
-          class="bg-bg-inp border-border-s text-xs px-2.5 py-1 text-tx-p focus:outline-none focus:ring-1 focus:ring-hust-red rounded-lg w-56 md:w-64"
+          class="bg-bg-inp border-border-s text-xs px-2.5 py-1 text-tx-p focus:outline-none focus:ring-1 focus:ring-hust-red rounded-lg w-56 md:w-72"
         >
           <template #value="slotProps">
-            <div v-if="slotProps.value" class="flex items-center gap-2">
+            <div v-if="slotProps.value" class="flex items-center gap-2 truncate">
               <i :class="chatStore.models.find(m => m.id === slotProps.value)?.icon" class="text-[10px] text-hust-gold"></i>
-              <span class="font-medium text-xs">{{ chatStore.models.find(m => m.id === slotProps.value)?.name }}</span>
+              <span class="font-semibold text-xs truncate">{{ chatStore.models.find(m => m.id === slotProps.value)?.name }}</span>
             </div>
           </template>
           <template #option="slotProps">
             <div class="flex flex-col py-0.5 text-left">
               <div class="flex items-center gap-2">
                 <i :class="slotProps.option.icon" class="text-[10px] text-hust-gold"></i>
-                <span class="font-semibold text-xs text-tx-p">{{ slotProps.option.name }}</span>
+                <span class="font-bold text-xs text-tx-p">{{ slotProps.option.name }}</span>
               </div>
-              <span class="text-[9px] text-tx-s mt-0.5 font-normal">{{ slotProps.option.description }}</span>
+              <span class="text-[9px] text-tx-s mt-0.5 font-normal line-clamp-1">{{ slotProps.option.description }}</span>
             </div>
           </template>
         </Select>
       </div>
     </div>
 
-    <!-- Right side: Cache status & control triggers -->
+    <!-- Right side: Connection Status, Cache toggle & Analytics -->
     <div class="flex items-center gap-2">
-      <!-- Cache Enable Toggle Switch-like badge -->
+      <!-- Backend Live Health Indicator & Toggle -->
       <button
-        class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all cursor-pointer select-none"
+        class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all cursor-pointer select-none shadow-xs"
+        :class="[
+          chatStore.isBackendLive && chatStore.apiMode === 'live'
+            ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25'
+            : 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/25'
+        ]"
+        v-tooltip.bottom="chatStore.isBackendLive 
+          ? (langStore.locale === 'vi' ? 'Backend Spring Boot (8081) đang kết nối Live' : 'Spring Boot Backend Live (8081)') 
+          : (langStore.locale === 'vi' ? 'Backend ngắt kết nối - đang dùng Chế độ Giả lập Offline' : 'Backend offline - using Mock Mode')"
+        @click="toggleApiMode"
+      >
+        <span class="w-2 h-2 rounded-full" :class="chatStore.isBackendLive && chatStore.apiMode === 'live' ? 'bg-emerald-500 dark:bg-emerald-400 animate-pulse' : 'bg-amber-500 dark:bg-amber-400'"></span>
+        <span>{{ chatStore.isBackendLive && chatStore.apiMode === 'live' ? 'BACKEND LIVE' : 'MOCK MODE' }}</span>
+      </button>
+
+      <!-- LLM Cache Enable Switch Badge -->
+      <button
+        class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all cursor-pointer select-none shadow-xs"
         :class="[
           cacheStore.enabled 
-            ? 'bg-emerald-950/20 text-emerald-400 border-emerald-900/60 hover:bg-emerald-950/30' 
+            ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25' 
             : 'bg-bg-inp text-tx-s border-border-s hover:bg-bg-btn-hover'
         ]"
         v-tooltip.bottom="cacheStore.enabled 
-          ? (langStore.locale === 'vi' ? 'Click để tắt LLM Cache' : 'Click to disable LLM Cache') 
-          : (langStore.locale === 'vi' ? 'Click để bật LLM Cache' : 'Click to enable LLM Cache')"
+          ? (langStore.locale === 'vi' ? 'Click để tắt LMCache Engine' : 'Click to disable LMCache Engine') 
+          : (langStore.locale === 'vi' ? 'Click để bật LMCache Engine' : 'Click to enable LMCache Engine')"
         @click="cacheStore.enabled = !cacheStore.enabled"
       >
-        <span class="w-1.5 h-1.5 rounded-full" :class="cacheStore.enabled ? 'bg-emerald-400 animate-pulse' : 'bg-tx-m'"></span>
-        <span>LLM Cache: {{ cacheStore.enabled ? (langStore.locale === 'vi' ? 'BẬT' : 'ON') : (langStore.locale === 'vi' ? 'TẮT' : 'OFF') }}</span>
+        <span class="w-1.5 h-1.5 rounded-full" :class="cacheStore.enabled ? 'bg-emerald-500 dark:bg-emerald-400 animate-pulse' : 'bg-tx-m'"></span>
+        <span>LMCache: {{ cacheStore.enabled ? 'BẬT' : 'TẮT' }}</span>
       </button>
 
-      <!-- Clear screen -->
+      <!-- Clear Chat Screen -->
       <button
         class="text-tx-s hover:text-red-400 p-1.5 rounded-lg hover:bg-bg-btn-hover transition-colors flex items-center justify-center cursor-pointer w-8 h-8"
         v-tooltip.bottom="langStore.t('clearChat')"

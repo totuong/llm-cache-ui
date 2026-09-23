@@ -56,29 +56,29 @@
 }
 
 .light-mode {
-  /* Light Theme Overrides */
-  --bg-app: #fafafa;
-  /* zinc-50 */
+  /* Light Theme Overrides - High Contrast & Clean Ergonomics */
+  --bg-app: #f4f4f5;
+  /* zinc-100 */
   --bg-side: #ffffff;
   /* white */
   --bg-card: #ffffff;
   /* white */
-  --bg-inp: #ffffff;
-  /* white */
+  --bg-inp: #e4e4e7;
+  /* zinc-200 */
   --bg-head: #ffffff;
   /* white */
   --border-p: #e4e4e7;
   /* zinc-200 */
-  --border-s: #f4f4f5;
-  /* zinc-100 */
-  --tx-p: #18181b;
-  /* zinc-900 */
-  --tx-s: #52525b;
-  /* zinc-600 */
+  --border-s: #d4d4d8;
+  /* zinc-300 */
+  --tx-p: #09090b;
+  /* zinc-950 - Strong Crisp Text */
+  --tx-s: #3f3f46;
+  /* zinc-700 - Highly readable secondary text */
   --tx-m: #71717a;
   /* zinc-500 */
-  --bg-btn-hover: #f4f4f5;
-  /* zinc-100 */
+  --bg-btn-hover: #e4e4e7;
+  /* zinc-200 */
   --tx-btn-hover: #000000;
 }
 

@@ -34,14 +34,14 @@ onMounted(() => {
 <template>
   <div 
     ref="scrollContainer"
-    class="flex-1 overflow-y-auto overflow-x-hidden flex flex-col scroll-smooth divide-y divide-zinc-950/20"
+    class="flex-1 overflow-y-auto overflow-x-hidden flex flex-col scroll-smooth py-3 px-2 md:px-4"
   >
     <div v-if="props.messages.length === 0" class="flex-1 flex flex-col">
       <!-- Slot for welcome screen -->
       <slot name="welcome"></slot>
     </div>
     
-    <div v-else class="flex flex-col w-full pb-8">
+    <div v-else class="flex flex-col w-full pb-6 space-y-1.5 max-w-5xl mx-auto">
       <ChatMessageItem
         v-for="msg in props.messages"
         :key="msg.id"

@@ -47,9 +47,9 @@ const translatedRecommendations = computed(() => {
   <div class="flex-1 flex flex-col justify-center items-center px-4 max-w-2xl mx-auto w-full text-center select-none py-8">
     
     <!-- Central Brand Ring Icon -->
-    <div class="relative w-20 h-20 rounded-2xl bg-gradient-to-br from-hust-red to-hust-red-dark flex items-center justify-center text-white shadow-xl shadow-hust-red/10 border border-hust-red/30 mb-5 animate-pulse">
-      <span class="font-black text-2xl tracking-widest">HUST</span>
-      <div class="absolute -top-1.5 -right-1.5 flex items-center justify-center w-5 h-5 rounded-full bg-hust-gold text-zinc-950 font-bold text-[10px] shadow">
+    <div class="relative w-12 h-12 rounded-xl bg-gradient-to-br from-hust-red to-hust-red-dark flex items-center justify-center text-white shadow-md border border-hust-red/30 mb-3">
+      <span class="font-extrabold text-sm tracking-wider">HUST</span>
+      <div class="absolute -top-1 -right-1 flex items-center justify-center w-4 h-4 rounded-full bg-hust-gold text-zinc-950 font-bold text-[8px] shadow">
         AI
       </div>
     </div>

@@ -1,5 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import {
+  fetchCacheStats,
+  fetchVllmMetrics,
+  fetchSystemStatus,
+  resetCacheStats,
+} from '../services/apiService'
+import type { CacheResponseDTO, VllmMetricsDTO, SystemStatusDTO } from '../types/api'
 
 export interface CacheItem {
   id: string
@@ -15,7 +22,7 @@ export type EvictionPolicy = 'LRU' | 'LFU' | 'FIFO'
 export type CacheType = 'exact' | 'semantic'
 
 export const useCacheStore = defineStore('cache', () => {
-  // Settings
+  // Local Settings
   const enabled = ref<boolean>(true)
   const ttl = ref<number>(3600) // TTL in seconds
   const similarityThreshold = ref<number>(0.75) // For semantic caching
@@ -23,45 +30,51 @@ export const useCacheStore = defineStore('cache', () => {
   const cacheType = ref<CacheType>('semantic')
   const maxCacheSize = ref<number>(15)
 
-  // Cache database
+  // Live Backend Data Objects
+  const backendStats = ref<CacheResponseDTO | null>(null)
+  const vllmMetrics = ref<VllmMetricsDTO | null>(null)
+  const systemStatus = ref<SystemStatusDTO | null>(null)
+  const isFetchingBackend = ref<boolean>(false)
+
+  // Local Cache database (Mock fallback / client-side tracking)
   const cacheItems = ref<CacheItem[]>([
     {
       id: 'c1',
+      prompt: 'Giải thích kỹ thuật Prefix Caching trong LMCache và vLLM?',
+      response: 'Prefix Caching là kỹ thuật lưu lại trạng thái KV Cache của các đoạn prompt trùng lặp trên bộ nhớ GPU/RAM, giúp giảm thời gian tính toán prompt (Time To First Token - TTFT) và tiết kiệm tài nguyên GPU.',
+      hits: 12,
+      lastAccessed: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
+      tokens: 145,
+      latency: 0.32,
+    },
+    {
+      id: 'c2',
       prompt: 'Học phần đồ án tốt nghiệp ngành CNTT Bách Khoa có bao nhiêu tín chỉ?',
-      response: 'Đồ án tốt nghiệp ngành Công nghệ thông tin tại Trường Công nghệ thông tin và Truyền thông (SoICT) - Đại học Bách khoa Hà Nội thường có khối lượng là 6 hoặc 10 tín chỉ (tùy thuộc vào chương trình đào tạo chuẩn hay chương trình Elitech/đặc thù). Bạn nên kiểm tra lại khung chương trình đào tạo cụ thể của khóa mình trên hệ thống SIS.',
+      response: 'Đồ án tốt nghiệp ngành Công nghệ thông tin tại Trường Công nghệ thông tin và Truyền thông (SoICT) - Đại học Bách khoa Hà Nội thường có khối lượng là 6 hoặc 10 tín chỉ (tùy thuộc vào chương trình đào tạo chuẩn hay chương trình Elitech/đặc thù).',
       hits: 4,
       lastAccessed: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
       tokens: 92,
       latency: 2.4,
     },
     {
-      id: 'c2',
+      id: 'c3',
       prompt: 'Explain semantic caching for Large Language Models',
-      response: 'Semantic caching is a technique that stores prompt-response pairs and evaluates incoming queries based on semantic similarity (using vector embeddings) rather than exact string matching. If a new prompt is semantically close to an existing one, the cache returns the stored response, saving API costs and reducing response latency from seconds to milliseconds.',
+      response: 'Semantic caching is a technique that stores prompt-response pairs and evaluates incoming queries based on semantic similarity (using vector embeddings) rather than exact string matching.',
       hits: 9,
       lastAccessed: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
       tokens: 78,
       latency: 3.1,
-    },
-    {
-      id: 'c3',
-      prompt: 'Công thức tính điểm trung bình học kỳ CPA tại HUST là gì?',
-      response: 'Điểm CPA (Cumulative Point Average) tại HUST được tính bằng tổng tích số giữa điểm số của mỗi học phần (quy đổi sang thang 4: A+=4, A=4, B+=3.5, B=3, C+=2.5, C=2, D+=1.5, D=1, F=0) với số tín chỉ tương ứng, rồi chia cho tổng số tín chỉ tích lũy. Công thức: CPA = Σ(Điểm học phần * Số tín chỉ) / Σ(Số tín chỉ).',
-      hits: 2,
-      lastAccessed: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-      tokens: 110,
-      latency: 1.8,
     }
   ])
 
   // Performance statistics
   const stats = ref({
-    totalRequests: 15,
-    hits: 15 - 3, // Initial mock hits
-    misses: 3,
-    totalTimeSaved: 23.4, // in seconds
-    totalTokensSaved: 1120,
-    totalCostSaved: 0.0224, // USD
+    totalRequests: 24,
+    hits: 19,
+    misses: 5,
+    totalTimeSaved: 42.8, // in seconds
+    totalTokensSaved: 3450,
+    totalCostSaved: 0.069, // USD
   })
 
   // Load from local storage if available
@@ -74,7 +87,7 @@ export const useCacheStore = defineStore('cache', () => {
       similarityThreshold.value = parsed.similarityThreshold || 0.75
       evictionPolicy.value = parsed.evictionPolicy || 'LRU'
       cacheType.value = parsed.cacheType || 'semantic'
-      cacheItems.value = parsed.cacheItems || []
+      cacheItems.value = parsed.cacheItems || cacheItems.value
       stats.value = parsed.stats || stats.value
     } catch (e) {
       console.error('Failed to parse cache settings', e)
@@ -94,6 +107,71 @@ export const useCacheStore = defineStore('cache', () => {
         stats: stats.value,
       })
     )
+  }
+
+  let lastFetchTime = 0
+
+  /**
+   * Refresh metrics from Spring Boot Backend (/api/v1/cache, /api/v1/metrics, /api/v1/system)
+   * Throttled to max 1 call per 5 seconds unless forced.
+   */
+  async function refreshBackendMetrics(force: boolean = false) {
+    const now = Date.now()
+    if (!force && now - lastFetchTime < 5000) return
+    lastFetchTime = now
+    
+    isFetchingBackend.value = true
+    try {
+      const [cStats, vMetrics, sysStatus] = await Promise.allSettled([
+        fetchCacheStats(),
+        fetchVllmMetrics(),
+        fetchSystemStatus(),
+      ])
+
+      if (cStats.status === 'fulfilled') backendStats.value = cStats.value
+      if (vMetrics.status === 'fulfilled') vllmMetrics.value = vMetrics.value
+      if (sysStatus.status === 'fulfilled') systemStatus.value = sysStatus.value
+
+      // If backend stats available, sync hitRate & totals
+      if (backendStats.value) {
+        if (backendStats.value.prefixCacheQueriesTotal) {
+          stats.value.totalRequests = backendStats.value.prefixCacheQueriesTotal
+          stats.value.hits = backendStats.value.prefixCacheHitsTotal
+          stats.value.misses = backendStats.value.prefixCacheQueriesTotal - backendStats.value.prefixCacheHitsTotal
+        }
+        if (backendStats.value.totalCachedTokensSaved) {
+          stats.value.totalTokensSaved = backendStats.value.totalCachedTokensSaved
+          stats.value.totalCostSaved = parseFloat((backendStats.value.totalCachedTokensSaved * 0.00002).toFixed(5))
+        }
+      }
+    } catch (err) {
+      console.warn('Could not refresh backend metrics:', err)
+    } finally {
+      isFetchingBackend.value = false
+    }
+  }
+
+  /**
+   * Reset cache on backend & clear client cache
+   */
+  async function clearAll() {
+    try {
+      await resetCacheStats()
+    } catch (err) {
+      console.warn('Backend reset call failed (proceeding locally):', err)
+    }
+    cacheItems.value = []
+    stats.value = {
+      totalRequests: 0,
+      hits: 0,
+      misses: 0,
+      totalTimeSaved: 0,
+      totalTokensSaved: 0,
+      totalCostSaved: 0,
+    }
+    backendStats.value = null
+    vllmMetrics.value = null
+    saveCache()
   }
 
   // Jaccard similarity word overlap metric to mock semantic similarity
@@ -116,8 +194,6 @@ export const useCacheStore = defineStore('cache', () => {
     return parseFloat((intersect.size / union.size).toFixed(3))
   }
 
-  // Tries to retrieve a prompt response from the cache
-  // Returns hit details if found, or null if miss
   function queryCache(prompt: string): { hit: boolean; response: string; similarity: number; latency: number } | null {
     if (!enabled.value) return null
 
@@ -133,7 +209,6 @@ export const useCacheStore = defineStore('cache', () => {
         highestSim = 1.0
       }
     } else {
-      // Semantic Cache Matching
       for (const item of cacheItems.value) {
         const sim = calculateSimilarity(prompt, item.prompt)
         if (sim > highestSim) {
@@ -142,23 +217,19 @@ export const useCacheStore = defineStore('cache', () => {
         }
       }
       
-      // Ensure the similarity meets the threshold
       if (highestSim < similarityThreshold.value) {
         bestMatch = null
       }
     }
 
     if (bestMatch) {
-      // Cache Hit!
       bestMatch.hits++
       bestMatch.lastAccessed = new Date().toISOString()
       
-      // Update statistics
       stats.value.totalRequests++
       stats.value.hits++
       
-      // Simulate savings
-      const timeSaved = parseFloat((bestMatch.latency - 0.05).toFixed(2)) // cached responses are fast (~0.05s)
+      const timeSaved = parseFloat((bestMatch.latency - 0.05).toFixed(2))
       stats.value.totalTimeSaved = parseFloat((stats.value.totalTimeSaved + timeSaved).toFixed(2))
       stats.value.totalTokensSaved += bestMatch.tokens
       stats.value.totalCostSaved = parseFloat((stats.value.totalCostSaved + (bestMatch.tokens * 0.00002)).toFixed(5))
@@ -172,21 +243,18 @@ export const useCacheStore = defineStore('cache', () => {
       }
     }
 
-    // Cache Miss
     return null
   }
 
-  // Insert a newly fetched item into cache
   function insertCache(prompt: string, response: string, tokens: number, latency: number) {
     if (!enabled.value) return
 
-    // Evict items if size limit reached
     if (cacheItems.value.length >= maxCacheSize.value) {
       evictItem()
     }
 
     const newItem: CacheItem = {
-      id: 'item_' + Math.random().toString(36).substr(2, 9),
+      id: 'item_' + Math.random().toString(36).substring(2, 9),
       prompt,
       response,
       hits: 0,
@@ -201,17 +269,14 @@ export const useCacheStore = defineStore('cache', () => {
     saveCache()
   }
 
-  // Evicts an item based on the eviction policy
   function evictItem() {
     if (cacheItems.value.length === 0) return
 
     let evictIndex = 0
 
     if (evictionPolicy.value === 'FIFO') {
-      // First In First Out - the oldest is at index 0 (assuming sequential push)
       evictIndex = 0
     } else if (evictionPolicy.value === 'LFU') {
-      // Least Frequently Used
       let minHits = Infinity
       for (let i = 0; i < cacheItems.value.length; i++) {
         const item = cacheItems.value[i]
@@ -221,7 +286,6 @@ export const useCacheStore = defineStore('cache', () => {
         }
       }
     } else {
-      // LRU: Least Recently Used
       let oldestTime = Infinity
       for (let i = 0; i < cacheItems.value.length; i++) {
         const item = cacheItems.value[i]
@@ -243,20 +307,11 @@ export const useCacheStore = defineStore('cache', () => {
     saveCache()
   }
 
-  function clearAll() {
-    cacheItems.value = []
-    stats.value = {
-      totalRequests: 0,
-      hits: 0,
-      misses: 0,
-      totalTimeSaved: 0,
-      totalTokensSaved: 0,
-      totalCostSaved: 0,
-    }
-    saveCache()
-  }
-
   const hitRate = computed(() => {
+    // Prefer backend stats hit ratio if present
+    if (backendStats.value && backendStats.value.prefixCacheHitRatio !== undefined) {
+      return Math.round(backendStats.value.prefixCacheHitRatio)
+    }
     if (stats.value.totalRequests === 0) return 0
     return Math.round((stats.value.hits / stats.value.totalRequests) * 100)
   })
@@ -271,6 +326,11 @@ export const useCacheStore = defineStore('cache', () => {
     cacheItems,
     stats,
     hitRate,
+    backendStats,
+    vllmMetrics,
+    systemStatus,
+    isFetchingBackend,
+    refreshBackendMetrics,
     queryCache,
     insertCache,
     deleteItem,

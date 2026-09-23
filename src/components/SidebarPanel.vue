@@ -51,15 +51,15 @@ function cancelRename() {
         <div class="flex items-center gap-2.5">
           <!-- HUST School Red Emblem Logo -->
           <div
-            class="w-8 h-8 rounded bg-hust-red flex items-center justify-center text-white font-extrabold text-sm shadow">
+            class="w-6 h-6 rounded-md bg-hust-red flex items-center justify-center text-white font-bold text-xs shadow-xs shrink-0">
             H
           </div>
           <div>
-            <h1 class="font-extrabold text-sm tracking-wide text-tx-p flex items-center gap-1.5">
+            <h1 class="font-extrabold text-xs tracking-wide text-tx-p flex items-center gap-1.5">
               LLM-HUST <span
-                class="text-[10px] text-hust-gold px-1.5 py-0.5 rounded bg-hust-gold/10 border border-hust-gold/20 font-bold">SOICT</span>
+                class="text-[9px] text-hust-gold px-1 py-0.5 rounded bg-hust-gold/10 border border-hust-gold/20 font-bold">SOICT</span>
             </h1>
-            <p class="text-[10px] text-tx-s">
+            <p class="text-[9px] text-tx-s">
               {{ langStore.locale === 'vi' ? 'Đề tài tối ưu hóa Cache' : 'LLM Cache Optimization' }}
             </p>
           </div>
@@ -67,26 +67,26 @@ function cancelRename() {
 
         <!-- Settings button -->
         <button
-          class="text-tx-s hover:text-tx-p hover:bg-bg-btn-hover p-1 w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition-colors"
+          class="text-tx-s hover:text-tx-p hover:bg-bg-btn-hover p-1 w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer transition-colors"
           v-tooltip.bottom="langStore.locale === 'vi' ? 'Cài đặt hệ thống' : 'System Settings'"
           @click="emit('open-settings')">
-          <i class="pi pi-cog text-sm"></i>
+          <i class="pi pi-cog text-xs"></i>
         </button>
       </div>
 
       <!-- Collapsed Logo & Settings stacked -->
       <template v-else>
         <div
-          class="w-8 h-8 rounded bg-hust-red flex items-center justify-center text-white font-extrabold text-sm shadow cursor-pointer shrink-0"
+          class="w-7 h-7 rounded-md bg-hust-red flex items-center justify-center text-white font-bold text-xs shadow-xs cursor-pointer shrink-0"
           v-tooltip.right="langStore.locale === 'vi' ? 'Đại học Bách Khoa Hà Nội' : 'HUST University'"
           @click="chatStore.createNewSession()">
           H
         </div>
         <button
-          class="text-tx-s hover:text-tx-p hover:bg-bg-btn-hover p-1 w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition-colors"
+          class="text-tx-s hover:text-tx-p hover:bg-bg-btn-hover p-1 w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer transition-colors"
           v-tooltip.right="langStore.locale === 'vi' ? 'Cài đặt hệ thống' : 'System Settings'"
           @click="emit('open-settings')">
-          <i class="pi pi-cog text-sm"></i>
+          <i class="pi pi-cog text-xs"></i>
         </button>
       </template>
 
@@ -104,7 +104,7 @@ function cancelRename() {
       </button>
 
       <!-- Search Input (Only when expanded) -->
-      <div class=" relative" v-if="!props.collapsed">
+      <div class="relative" v-if="!props.collapsed">
         <IconField class="w-full">
           <InputText v-model="chatStore.searchFilter" :placeholder="langStore.t('searchChat')" class="w-full pr-8" />
         </IconField>
