@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient: Deep Dark Crimson to Vibrant Rose Red -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#be123c"/>
+      <stop offset="50%" stop-color="#e11d48"/>
+      <stop offset="100%" stop-color="#4c0519"/>
+    </linearGradient>
+
+    <!-- Metallic Gold Accent Gradient -->
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fde047"/>
+      <stop offset="50%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#b45309"/>
+    </linearGradient>
+
+    <!-- Cyan Electric Layer Gradient -->
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+
+    <!-- Soft Outer Border Glow -->
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="50%" stop-color="#f43f5e"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+
+    <!-- Glow Filter -->
+    <filter id="glowFilter" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Full Bleed Edge-to-Edge Background -->
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="none" stroke="url(#borderGrad)" stroke-width="12" stroke-opacity="0.4" />
+
+  <!-- Isometric 3-Tier Layered Cache Block -->
+  <g transform="translate(0, 10)">
+    <!-- Top Layer (L1 HBM GPU Cache) - Gold Outline -->
+    <path d="M 120 180 L 256 110 L 392 180 L 256 250 Z" fill="#1e1b4b" fill-opacity="0.4" stroke="url(#goldGrad)" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- Middle Layer (L2 Host DRAM Cache) - Cyan Outline -->
+    <path d="M 120 265 L 256 335 L 392 265" fill="none" stroke="url(#cyanGrad)" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- Bottom Layer (L2 NVMe / Storage) - Crisp White Outline -->
+    <path d="M 120 350 L 256 420 L 392 350" fill="none" stroke="#ffffff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.9" />
+
+    <!-- Speed Lightning Bolt in Center (Glowing Amber) -->
+    <path d="M 285 130 L 205 270 L 265 270 L 225 390 L 320 235 L 260 235 Z" fill="url(#goldGrad)" filter="url(#glowFilter)" />
+  </g>
+</svg>

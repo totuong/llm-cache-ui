@@ -35,7 +35,7 @@ export const useLangStore = defineStore('lang', () => {
       member: 'Thành viên',
       suggestedPrompts: 'Gợi ý câu hỏi đề xuất',
       inputPlaceholder: 'Hỏi trợ lý LLM-HUST về Đồ án tốt nghiệp hoặc Caching...',
-      disclaimer: 'Hệ thống thử nghiệm Luận văn tốt nghiệp Bách Khoa. LLM-HUST có thể đưa ra thông tin không chính xác. Hãy kiểm chứng nguồn tài liệu chính thức.',
+      disclaimer: 'Hệ thống thử nghiệm LMCache & vLLM Engine. LLM-HUST có thể đưa ra thông tin không chính xác. Hãy kiểm chứng nguồn tài liệu chính thức.',
       settingsTitle: 'CÀI ĐẶT HỆ THỐNG',
       themeMode: 'Chế độ giao diện',
       themeDesc: 'Chuyển đổi giao diện Sáng / Tối.',

@@ -100,6 +100,16 @@ export const useChatStore = defineStore('chat', () => {
       activeSessionId.value = parsed.activeSessionId || null
       selectedModelId.value = parsed.selectedModelId || 'Qwen/Qwen2.5-1.5B-Instruct'
       apiMode.value = parsed.apiMode || 'live'
+
+      // Clean up multiple empty sessions from legacy state
+      let emptyCount = 0
+      sessions.value = sessions.value.filter(s => {
+        if (s.messages.length === 0) {
+          emptyCount++
+          return emptyCount === 1 // keep only 1 empty session max
+        }
+        return true
+      })
     } catch (e) {
       console.error('Failed to parse chat history', e)
     }
@@ -142,6 +152,20 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function createNewSession() {
+    // 1. If active session is already empty, just keep active session
+    if (activeSession.value && activeSession.value.messages.length === 0) {
+      return activeSession.value
+    }
+
+    // 2. If any existing session is empty, switch to that empty session
+    const existingEmpty = sessions.value.find(s => s.messages.length === 0)
+    if (existingEmpty) {
+      activeSessionId.value = existingEmpty.id
+      saveToStorage()
+      return existingEmpty
+    }
+
+    // 3. Otherwise, create a new session
     const newId = 'session_' + Date.now().toString(36)
     const newSess: ChatSession = {
       id: newId,
@@ -196,7 +220,7 @@ export const useChatStore = defineStore('chat', () => {
       if (histories && histories.length > 0) {
         const dbSessionId = 'session_postgres_history'
         let dbSess = sessions.value.find(s => s.id === dbSessionId)
-        
+
         const mappedMessages: Message[] = histories.flatMap(h => [
           {
             id: `msg_pg_${h.id}_u`,
@@ -256,21 +280,25 @@ export const useChatStore = defineStore('chat', () => {
   // Fallback Knowledge Base for Offline / Demo Mode
   const knowledgeBase: Array<{ keywords: string[]; response: string }> = [
     {
-      keywords: ['prefix caching', 'lmcache', 'vllm', 'kv cache', 'giải thích'],
+      keywords: ['prefix caching', 'lmcache', 'vllm', 'kv cache', 'giải thích', 'explain'],
       response: `**Giải thích Kỹ thuật Prefix Caching trong LMCache & vLLM Engine:**\n\n1. **Khái niệm Prefix Caching**: Khi xử lý nhiều truy vấn có phần mở đầu (System Prompt, Context, hoặc tài liệu tham khảo) giống nhau, vLLM kết hợp với LMCache sẽ lưu trữ các trạng thái **Key-Value (KV) Cache** của các token đó trực tiếp trên bộ nhớ GPU/Host RAM.\n2. **Tái sử dụng KV Cache**: Thay vì phải thực hiện bước tính toán lại prompt (Prefill phase) tốn tài nguyên GPU đối với các đoạn text lặp lại, vLLM chỉ cần tải lại trạng thái KV Cache đã lưu từ trước.\n3. **Lợi ích Vượt trội**:\n   - **Giảm Time To First Token (TTFT)**: Thời gian nhận được token đầu tiên giảm tới 70-90% (từ vài giây xuống vài miligiây).\n   - **Tiết kiệm tài nguyên GPU**: Tăng throughput (số lượng request/giây) cho cùng một hạ tầng server vLLM.\n   - **Tối ưu chi phí API**: Tiết kiệm tổng số Tokens cần xử lý tính toán thực tế.\n\n*Hệ thống Backend Spring Boot của bạn đang kết nối trực tiếp với vLLM Engine để tính toán các chỉ số Prefix Cache Hit Ratio này!*`
     },
     {
-      keywords: ['quy trình', 'đăng ký', 'đồ án tốt nghiệp', 'thủ tục', 'bảo vệ'],
+      keywords: ['quy trình', 'đăng ký', 'đồ án tốt nghiệp', 'thủ tục', 'bảo vệ', 'graduation', 'registration'],
       response: `**Quy trình đăng ký và bảo vệ Đồ án tốt nghiệp (ĐATN) tại Trường CNTT&TT - Bách Khoa Hà Nội:**\n\n1. **Đăng ký đề tài**: Thực hiện trên hệ thống Quản lý đào tạo (SIS) vào tuần đầu tiên của học kỳ tốt nghiệp. Sinh viên cần điền thông tin đề tài và giảng viên hướng dẫn (GVHD).\n2. **Phê duyệt**: GVHD duyệt đề tài online trên SIS.\n3. **Thực hiện**: SV tiến hành nghiên cứu dưới sự chỉ đạo của GVHD trong 15-18 tuần. Hàng tuần phải gặp GVHD báo cáo tiến độ.\n4. **Nộp hồ sơ bảo vệ**: SV chuẩn bị các tài liệu gồm: Quyển báo cáo ĐATN (theo mẫu HUST), Bản nhận xét của GVHD (có chữ ký), Tờ quét đạo văn (mức trùng lặp cho phép dưới 20%).\n5. **Thông qua & Phản biện**: Bộ môn cử giảng viên phản biện chấm chéo quyển báo cáo.\n6. **Hội đồng chấm**: SV trình chiếu PowerPoint và demo phần mềm (nếu có) trước hội đồng chấm ĐATN gồm 3-5 thành viên.\n\n*Chúc bạn hoàn thành xuất sắc đồ án của mình!*`
     },
     {
-      keywords: ['semantic caching', 'cách triển khai', 'llm cache', 'vector database'],
-      response: `**Cách triển khai Semantic Caching cho mô hình ngôn ngữ lớn (LLM):**\n\n1. **Sử dụng Embedding Model**: Khi người dùng gửi câu hỏi (Prompt $Q_{new}$), ta chuyển đổi nó thành một vector số thực (Embedding Vector $V_{new}$) bằng các mô hình embedding.\n2. **Tìm kiếm Vector tương tự**: Sử dụng cơ sở dữ liệu vector (như Redis, Milvus, Chroma, pgvector) để so sánh $V_{new}$ với các vector câu hỏi đã được lưu trong Cache từ trước.\n3. **Độ tương tự Cosine (Cosine Similarity)**: Đo khoảng cách góc giữa hai vector. \n   - Công thức: $Sim(V_1, V_2) = \\frac{V_1 \\cdot V_2}{||V_1|| \\, ||V_2||}$\n4. **Quyết định Hit/Miss**:\n   - **Nếu $Sim \\ge \\text{Threshold}$ (ví dụ 0.82)**: Xác định là **Cache Hit**. Trả về trực tiếp câu trả lời $A_{cached}$ tương ứng. Tốc độ phản hồi cực nhanh (~50ms) và không tốn phí API LLM.\n   - **Nếu $Sim < \\text{Threshold}$**: Xác định là **Cache Miss**. Gửi prompt tới API LLM để sinh câu trả lời mới, sau đó lưu cặp vector và câu trả lời $(V_{new}, Q_{new}, A_{new})$ vào Vector DB.`
+      keywords: ['semantic caching', 'cách triển khai', 'llm cache', 'vector database', 'implement'],
+      response: `**Cách triển khai Semantic Caching cho mô hình ngôn ngữ lớn (LLM):**\n\n1. **Sử dụng Embedding Model**: Khi người dùng gửi câu hỏi (Prompt $Q_{new}$), ta chuyển đổi nó thành một vector số thực (Embedding Vector $V_{new}$) bằng các mô hình embedding.\n2. **Tìm kiếm Vector tương tự**: Sử dụng cơ sở dữ liệu vector (như Redis, Milvus, Chroma, pgvector) để so sánh $V_{new}$ với các vector câu hỏi đã được lưu trong Cache từ trước.\n3. **Độ tương tự Cosine (Cosine Similarity)**: Đo khoảng cách góc giữa hai vector.\n   - Công thức: $Sim(V_1, V_2) = \\frac{V_1 \\cdot V_2}{||V_1|| \\, ||V_2||}$\n4. **Quyết định Hit/Miss**:\n   - **Nếu $Sim \\ge \\text{Threshold}$ (ví dụ 0.82)**: Xác định là **Cache Hit**. Trả về trực tiếp câu trả lời $A_{cached}$ tương ứng. Tốc độ phản hồi cực nhanh (~50ms) và không tốn phí API LLM.\n   - **Nếu $Sim < \\text{Threshold}$**: Xác định là **Cache Miss**. Gửi prompt tới API LLM để sinh câu trả lời mới, sau đó lưu cặp vector và câu trả lời $(V_{new}, Q_{new}, A_{new})$ vào Vector DB.`
     },
     {
-      keywords: ['font chữ', 'giãn dòng', 'quy chuẩn', 'luận văn', 'định dạng'],
+      keywords: ['font chữ', 'giãn dòng', 'quy chuẩn', 'luận văn', 'định dạng', 'formatting', 'standards', 'cover'],
       response: `**Quy chuẩn định dạng báo cáo ĐATN chuẩn của Đại học Bách Khoa Hà Nội:**\n\n* **Phông chữ**: Times New Roman, cỡ chữ 13pt (hệ soạn thảo Unicode).\n* **Giãn dòng (Line spacing)**: Cài đặt ở chế độ 1.3 - 1.5 lines.\n* **Giãn đoạn (Paragraph spacing)**: Trước (Before) 6pt, Sau (After) 6pt.\n* **Căn lề (Page setup)**: Lề trên: 2.0 - 2.5 cm; Lề dưới: 2.0 - 2.5 cm; Lề trái: 3.0 - 3.5 cm; Lề phải: 1.5 - 2.0 cm.\n* **Đánh số trang**: Số trang được đánh ở giữa, phía dưới mỗi trang.`
     },
+    {
+      keywords: ['code', 'javascript', 'node.js', 'python', 'redis', 'sample code', 'caching setup', 'mã mẫu'],
+      response: `**Mã mẫu triển khai Redis Caching đơn giản cho API Node.js / Python:**\n\n\`\`\`javascript\nconst express = require('express');\nconst Redis = require('ioredis');\nconst redis = new Redis(); // Redis local connection\n\nconst app = express();\napp.use(express.json());\n\napp.post('/api/chat', async (req, res) => {\n  const { prompt } = req.body;\n  const cacheKey = \`cache:prompt:\${prompt.trim().toLowerCase()}\`;\n  \n  // Check cache\n  const cachedResponse = await redis.get(cacheKey);\n  if (cachedResponse) {\n    return res.json({\n      response: cachedResponse,\n      cacheStatus: { hit: true, latencyMs: 5 }\n    });\n  }\n  \n  // Cache Miss -> Call LLM Engine\n  const llmResponse = await callLLMEngine(prompt);\n  await redis.set(cacheKey, llmResponse, 'EX', 3600); // 1 hr TTL\n  \n  return res.json({\n    response: llmResponse,\n    cacheStatus: { hit: false, latencyMs: 1250 }\n  });\n});\n\`\`\``
+    }
   ]
 
   function generateFallbackResponse(prompt: string, modelName: string): string {
@@ -293,12 +321,12 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     currentSession.messages.push(userMsg)
-    
+
     // Automatically rename title if first message
     if (currentSession.messages.length === 1 || currentSession.title === 'Đoạn chat mới') {
       currentSession.title = userPrompt.length > 25 ? userPrompt.substring(0, 25) + '...' : userPrompt
     }
-    
+
     saveToStorage()
     isTyping.value = true
 
@@ -314,7 +342,7 @@ export const useChatStore = defineStore('chat', () => {
     currentSession.messages.push(assistantMsg)
 
     // Check if Backend is alive & user is in live mode
-    const isAlive = apiMode.value === 'live' && (await checkHealth())
+    const isAlive = apiMode.value === 'live' && isBackendLive.value && (await checkHealth())
 
     if (isAlive) {
       // --- CALL REGULAR SYNCHRONOUS CHAT API (/api/v1/chat) ---
@@ -357,6 +385,7 @@ export const useChatStore = defineStore('chat', () => {
         return
       } catch (err) {
         console.warn('Regular chat API error, falling back to offline simulation:', err)
+        isBackendLive.value = false
         executeOfflineSimulation(userPrompt, assistantMsgId)
       }
     } else {
@@ -401,7 +430,7 @@ export const useChatStore = defineStore('chat', () => {
       const matchedKB = knowledgeBase.find(item =>
         item.keywords.some(keyword => promptLower.includes(keyword))
       )
-      
+
       responseText = matchedKB ? matchedKB.response : generateFallbackResponse(userPrompt, modelName)
       const totalTokens = Math.round(responseText.length / 4) + 15
 

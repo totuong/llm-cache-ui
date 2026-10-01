@@ -7,12 +7,24 @@ import Password from 'primevue/password'
 import { useAuthStore } from '../stores/auth'
 import { useToast } from 'primevue/usetoast'
 
+// Lucide Icons
+import {
+  LogIn,
+  Phone,
+  Mail,
+  Lock,
+  User,
+  ShieldCheck,
+  ArrowRight,
+  AlertCircle,
+} from 'lucide-vue-next'
+
 const props = defineProps<{
   visible: boolean
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:visible', value: boolean): void
+  (e: 'update:visible', value: boolean): value is boolean
 }>()
 
 const authStore = useAuthStore()
@@ -95,7 +107,7 @@ function handleSendOtp() {
   toast.add({
     severity: 'info',
     summary: 'Đã gửi mã OTP',
-    detail: 'Mã xác thực gồm 4 chữ số (mặc định: 1234) đã được gửi đến số điện thoại.',
+    detail: 'Mã xác thực 4 chữ số (mặc định: 1234) đã được gửi.',
     life: 4000
   })
 }
@@ -127,7 +139,7 @@ function handleForgotPassword() {
   toast.add({
     severity: 'success',
     summary: 'Yêu cầu khôi phục mật khẩu',
-    detail: `Hướng dẫn đổi lại mật khẩu đã được gửi đến ${email.value}`,
+    detail: `Hướng dẫn đổi lại mật khẩu đã gửi đến ${email.value}`,
     life: 5000
   })
   mode.value = 'login'
@@ -135,7 +147,6 @@ function handleForgotPassword() {
 
 function closeModal() {
   emit('update:visible', false)
-  // Reset states
   email.value = ''
   password.value = ''
   name.value = ''
@@ -164,36 +175,39 @@ function switchMode(newMode: AuthMode) {
     "
     class="w-full max-w-md mx-4"
   >
-    <div class="flex flex-col gap-4 my-2">
+    <div class="flex flex-col gap-4 my-2 text-left">
       
-      <!-- Brand Logo Indicator -->
+      <!-- Brand Emblem Indicator -->
       <div class="flex flex-col items-center gap-1.5 text-center mb-1 select-none">
-        <div class="w-12 h-12 rounded-xl bg-hust-red flex items-center justify-center text-white font-black text-lg shadow-md shadow-hust-red/10">
+        <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-hust-red to-hust-red-dark flex items-center justify-center text-white font-black text-lg shadow-md border border-hust-red/30">
           H
         </div>
-        <h3 class="font-extrabold text-sm text-zinc-200 tracking-wide mt-1">LLM-HUST Chat Assistant</h3>
-        <p class="text-[10px] text-zinc-500">Đăng nhập để lưu lịch sử và đồng bộ tham số tối ưu hóa.</p>
+        <h3 class="font-extrabold text-sm text-tx-p tracking-wide mt-1">LLM-HUST Assistant</h3>
+        <p class="text-[10px] text-tx-s">Đăng nhập để lưu lịch sử và đồng bộ tham số tối ưu hóa.</p>
       </div>
 
       <!-- Mode 1: Forgot Password -->
       <div v-if="mode === 'forgot'" class="flex flex-col gap-3.5">
         <div class="flex flex-col gap-1.5 text-left">
-          <label class="text-xs font-semibold text-zinc-400">Địa chỉ Email</label>
+          <label class="text-xs font-semibold text-tx-s">Địa chỉ Email</label>
           <InputText
             v-model="email"
             placeholder="nhap.email@hust.edu.vn"
-            class="w-full bg-zinc-900 border-zinc-800 text-zinc-200 text-xs p-2 rounded focus:ring-hust-red focus:border-hust-red"
+            class="w-full bg-bg-inp border-border-p text-tx-p text-xs p-2 rounded-xl focus:ring-hust-red focus:border-hust-red"
           />
         </div>
-        <p v-if="error" class="text-[10px] text-red-500 font-medium">{{ error }}</p>
+        <p v-if="error" class="text-[10px] text-rose-400 font-medium flex items-center gap-1">
+          <AlertCircle class="w-3 h-3" />
+          {{ error }}
+        </p>
         
         <Button
           label="Gửi yêu cầu khôi phục"
-          class="bg-hust-red hover:bg-hust-red-hover text-white text-xs py-2 rounded-lg border-none shadow transition-colors w-full font-bold mt-2"
+          class="bg-hust-red hover:bg-hust-red-hover text-white text-xs py-2.5 rounded-xl border-none shadow transition-colors w-full font-bold mt-2 cursor-pointer"
           @click="handleForgotPassword"
         />
         
-        <div class="text-center text-xs text-zinc-400 mt-2 select-none">
+        <div class="text-center text-xs text-tx-s mt-2 select-none">
           Quay lại <a href="#" class="text-hust-gold hover:underline font-semibold" @click.prevent="switchMode('login')">Đăng nhập</a>
         </div>
       </div>
@@ -202,53 +216,59 @@ function switchMode(newMode: AuthMode) {
       <div v-else-if="mode === 'phone'" class="flex flex-col gap-3.5">
         <div v-if="!isOtpSent" class="flex flex-col gap-3">
           <div class="flex flex-col gap-1.5 text-left">
-            <label class="text-xs font-semibold text-zinc-400">Số điện thoại</label>
+            <label class="text-xs font-semibold text-tx-s">Số điện thoại</label>
             <InputText
               v-model="phone"
               placeholder="Ví dụ: 0987654321"
-              class="w-full bg-zinc-900 border-zinc-800 text-zinc-200 text-xs p-2 rounded focus:ring-hust-red focus:border-hust-red"
+              class="w-full bg-bg-inp border-border-p text-tx-p text-xs p-2 rounded-xl"
             />
           </div>
-          <p v-if="error" class="text-[10px] text-red-500 font-medium">{{ error }}</p>
+          <p v-if="error" class="text-[10px] text-rose-400 font-medium flex items-center gap-1">
+            <AlertCircle class="w-3 h-3" />
+            {{ error }}
+          </p>
           <Button
             label="Gửi mã OTP"
-            class="bg-hust-red hover:bg-hust-red-hover text-white text-xs py-2 rounded-lg border-none shadow w-full font-bold mt-2"
+            class="bg-hust-red hover:bg-hust-red-hover text-white text-xs py-2.5 rounded-xl border-none shadow w-full font-bold mt-2 cursor-pointer"
             @click="handleSendOtp"
           />
         </div>
 
         <div v-else class="flex flex-col gap-3">
-          <div class="text-[10px] text-emerald-400 bg-emerald-950/20 border border-emerald-900/40 p-2 rounded text-left">
-            Mã OTP đã được gửi đến số <strong class="text-zinc-200">{{ phone }}</strong>. Nhập <strong>1234</strong> để kiểm thử.
+          <div class="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded-xl text-left font-mono">
+            Mã OTP đã được gửi đến số <strong class="text-tx-p">{{ phone }}</strong>. Nhập <strong>1234</strong> để kiểm thử.
           </div>
           <div class="flex flex-col gap-1.5 text-left">
-            <label class="text-xs font-semibold text-zinc-400">Nhập mã xác thực (OTP)</label>
+            <label class="text-xs font-semibold text-tx-s">Nhập mã xác thực (OTP)</label>
             <InputText
               v-model="phoneCode"
-              placeholder="Nhập 1234"
-              class="w-full bg-zinc-900 border-zinc-800 text-zinc-200 text-xs p-2 rounded text-center tracking-widest font-bold"
+              placeholder="1234"
+              class="w-full bg-bg-inp border-border-p text-tx-p text-xs p-2 rounded-xl text-center tracking-widest font-bold"
               maxlength="4"
               @keyup.enter="handleVerifyOtp"
             />
           </div>
-          <p v-if="error" class="text-[10px] text-red-500 font-medium">{{ error }}</p>
+          <p v-if="error" class="text-[10px] text-rose-400 font-medium flex items-center gap-1">
+            <AlertCircle class="w-3 h-3" />
+            {{ error }}
+          </p>
           <div class="flex gap-2 mt-2">
             <Button
               label="Quay lại"
               severity="secondary"
               text
-              class="flex-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 text-xs py-2 rounded border border-zinc-800"
+              class="flex-1 text-tx-s hover:text-tx-p hover:bg-bg-btn-hover text-xs py-2.5 rounded-xl border border-border-p cursor-pointer"
               @click="isOtpSent = false"
             />
             <Button
               label="Xác thực OTP"
-              class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs py-2 rounded-lg border-none font-bold"
+              class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs py-2.5 rounded-xl border-none font-bold cursor-pointer"
               @click="handleVerifyOtp"
             />
           </div>
         </div>
 
-        <div class="text-center text-xs text-zinc-400 mt-2 select-none">
+        <div class="text-center text-xs text-tx-s mt-2 select-none">
           Hoặc đăng nhập bằng <a href="#" class="text-hust-gold hover:underline font-semibold" @click.prevent="switchMode('login')">Email & Mật khẩu</a>
         </div>
       </div>
@@ -257,10 +277,9 @@ function switchMode(newMode: AuthMode) {
       <div v-else class="flex flex-col gap-3.5">
         <!-- Google Social Login Button -->
         <button
-          class="w-full flex items-center justify-center gap-2.5 rounded-lg border border-zinc-800 hover:border-zinc-700 bg-zinc-900/60 hover:bg-zinc-900 py-2 text-xs font-bold text-zinc-200 transition-all cursor-pointer shadow-sm"
+          class="w-full flex items-center justify-center gap-2.5 rounded-xl border border-border-p hover:border-border-s bg-bg-inp hover:bg-bg-btn-hover py-2.5 text-xs font-bold text-tx-p transition-all cursor-pointer shadow-xs"
           @click="handleGoogleLogin"
         >
-          <!-- Simulated Google SVG logo -->
           <svg class="w-4 h-4" viewBox="0 0 24 24">
             <path
               fill="#4285F4"
@@ -284,47 +303,47 @@ function switchMode(newMode: AuthMode) {
 
         <!-- Phone number shortcut link -->
         <button
-          class="w-full flex items-center justify-center gap-2 rounded-lg border border-zinc-800 hover:border-zinc-700 bg-zinc-900/60 hover:bg-zinc-900 py-2 text-xs font-bold text-zinc-200 transition-all cursor-pointer shadow-sm"
+          class="w-full flex items-center justify-center gap-2 rounded-xl border border-border-p hover:border-border-s bg-bg-inp hover:bg-bg-btn-hover py-2.5 text-xs font-bold text-tx-p transition-all cursor-pointer shadow-xs"
           @click="switchMode('phone')"
         >
-          <i class="pi pi-phone text-xs text-hust-gold"></i>
+          <Phone class="w-4 h-4 text-hust-gold" />
           <span>Đăng nhập bằng Số điện thoại</span>
         </button>
 
         <div class="flex items-center gap-3 my-1 select-none">
-          <span class="h-px bg-zinc-900 flex-1"></span>
-          <span class="text-[9px] text-zinc-600 font-bold uppercase tracking-wider">Hoặc</span>
-          <span class="h-px bg-zinc-900 flex-1"></span>
+          <span class="h-px bg-border-p flex-1"></span>
+          <span class="text-[9px] text-tx-m font-bold uppercase tracking-wider">Hoặc</span>
+          <span class="h-px bg-border-p flex-1"></span>
         </div>
 
         <!-- Full Name field (Sign Up Mode) -->
         <div v-if="mode === 'signup'" class="flex flex-col gap-1.5 text-left">
-          <label class="text-xs font-semibold text-zinc-400">Tên hiển thị</label>
+          <label class="text-xs font-semibold text-tx-s">Tên hiển thị</label>
           <InputText
             v-model="name"
             placeholder="Ví dụ: Nguyễn Văn A"
-            class="w-full bg-zinc-900 border-zinc-800 text-zinc-200 text-xs p-2 rounded focus:ring-hust-red focus:border-hust-red"
+            class="w-full bg-bg-inp border-border-p text-tx-p text-xs p-2 rounded-xl"
           />
         </div>
 
         <!-- Email Field -->
         <div class="flex flex-col gap-1.5 text-left">
-          <label class="text-xs font-semibold text-zinc-400">Địa chỉ Email</label>
+          <label class="text-xs font-semibold text-tx-s">Địa chỉ Email</label>
           <InputText
             v-model="email"
             placeholder="email@vidu.com"
-            class="w-full bg-zinc-900 border-zinc-800 text-zinc-200 text-xs p-2 rounded focus:ring-hust-red focus:border-hust-red"
+            class="w-full bg-bg-inp border-border-p text-tx-p text-xs p-2 rounded-xl"
           />
         </div>
 
         <!-- Password Field -->
         <div class="flex flex-col gap-1.5 text-left">
           <div class="flex justify-between items-center">
-            <label class="text-xs font-semibold text-zinc-400">Mật khẩu</label>
+            <label class="text-xs font-semibold text-tx-s">Mật khẩu</label>
             <a 
               v-if="mode === 'login'" 
               href="#" 
-              class="text-[10px] text-zinc-500 hover:text-hust-gold transition-colors font-semibold"
+              class="text-[10px] text-tx-s hover:text-hust-gold transition-colors font-semibold"
               @click.prevent="switchMode('forgot')"
             >
               Quên mật khẩu?
@@ -335,25 +354,26 @@ function switchMode(newMode: AuthMode) {
             placeholder="••••••••"
             :feedback="mode === 'signup'"
             toggleMask
-            class="w-full bg-zinc-900 border-zinc-800 text-zinc-200 text-xs rounded focus-within:ring-hust-red focus-within:border-hust-red"
-            inputClass="w-full bg-zinc-900 border-none text-zinc-200 text-xs p-2 rounded"
+            class="w-full bg-bg-inp border-border-p text-tx-p text-xs rounded-xl"
+            inputClass="w-full bg-bg-inp border-none text-tx-p text-xs p-2 rounded-xl"
           />
         </div>
 
         <!-- Error feedback -->
-        <p v-if="error" class="text-[10px] text-red-500 font-medium text-left">
-          <i class="pi pi-exclamation-circle text-[9px] mr-1"></i>{{ error }}
+        <p v-if="error" class="text-[10px] text-rose-400 font-medium text-left flex items-center gap-1">
+          <AlertCircle class="w-3 h-3" />
+          {{ error }}
         </p>
 
         <!-- Submit Button -->
         <Button
           :label="mode === 'login' ? 'Đăng nhập' : 'Tạo tài khoản'"
-          class="bg-hust-red hover:bg-hust-red-hover text-white text-xs py-2 rounded-lg border-none shadow transition-colors w-full font-bold mt-1"
+          class="bg-hust-red hover:bg-hust-red-hover text-white text-xs py-2.5 rounded-xl border-none shadow transition-colors w-full font-bold mt-1 cursor-pointer"
           @click="mode === 'login' ? handleEmailLogin() : handleSignUp()"
         />
 
         <!-- Switch Mode Link footer -->
-        <div class="text-center text-xs text-zinc-500 mt-2 select-none">
+        <div class="text-center text-xs text-tx-s mt-2 select-none">
           <template v-if="mode === 'login'">
             Chưa có tài khoản? <a href="#" class="text-hust-gold hover:underline font-semibold" @click.prevent="switchMode('signup')">Đăng ký ngay</a>
           </template>

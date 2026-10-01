@@ -10,15 +10,15 @@ import type {
 
 // Base URL configuration (supports VITE_API_BASE_URL or default to localhost:8080)
 const API_BASE_URL =
-  (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8081/api/v1'
+  (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080/api/v1'
 
 /**
- * Health check helper to test if Spring Boot backend is reachable
+ * Fast health check helper to test if Spring Boot backend is reachable
  */
 export async function checkBackendHealth(): Promise<boolean> {
   try {
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 2500)
+    const timeoutId = setTimeout(() => controller.abort(), 800)
     
     const res = await fetch(`${API_BASE_URL}/system`, {
       method: 'GET',

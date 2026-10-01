@@ -20,69 +20,67 @@
   --color-hust-red-hover: var(--hust-red-hover);
   --color-hust-red-dark: var(--hust-red-dark);
   --color-hust-gold: var(--hust-gold);
+  --color-accent-cyan: var(--accent-cyan);
+  --color-accent-emerald: var(--accent-emerald);
+  --color-accent-violet: var(--accent-violet);
 }
 
-/* 2. Theme Token Values */
+/* 2. Custom CSS Variable Palette Definitions */
 :root {
-  /* Default: Dark Theme */
-  --bg-app: #09090b;
-  /* zinc-950 */
-  --bg-side: #09090b;
-  /* zinc-950 */
-  --bg-card: #09090b;
-  /* zinc-950 */
-  --bg-inp: #18181b;
-  /* zinc-900 */
-  --bg-head: #09090b;
-  /* zinc-950 */
-  --border-p: #18181b;
-  /* zinc-900 */
-  --border-s: #27272a;
-  /* zinc-800 */
-  --tx-p: #f4f4f5;
-  /* zinc-100 */
-  --tx-s: #a1a1aa;
-  /* zinc-400 */
-  --tx-m: #52525b;
-  /* zinc-600 */
-  --bg-btn-hover: #18181b;
-  /* zinc-900 */
+  /* Premium Cyber/Slate Dark Mode (Default) */
+  --bg-app: #0b0f19;
+  --bg-side: #070a12;
+  --bg-card: rgba(15, 23, 42, 0.75);
+  --bg-inp: #131b2e;
+  --bg-head: #0b0f19;
+  
+  --border-p: #1e293b;
+  --border-s: #334155;
+  
+  --tx-p: #f8fafc;
+  --tx-s: #94a3b8;
+  --tx-m: #64748b;
+  
+  --bg-btn-hover: #1e293b;
   --tx-btn-hover: #ffffff;
 
-  --hust-red: #a81a1a;
-  --hust-red-hover: #c42424;
-  --hust-red-dark: #7a1010;
-  --hust-gold: #c5a059;
+  --hust-red: #991b1b;
+  --hust-red-hover: #b91c1c;
+  --hust-red-dark: #7f1d1d;
+  --hust-gold: #f59e0b;
+  --accent-cyan: #06b6d4;
+  --accent-emerald: #10b981;
+  --accent-violet: #8b5cf6;
 }
 
 .light-mode {
-  /* Light Theme Overrides - High Contrast & Clean Ergonomics */
-  --bg-app: #f4f4f5;
-  /* zinc-100 */
+  /* Crisp Ergonomic Light Theme */
+  --bg-app: #f8fafc;
   --bg-side: #ffffff;
-  /* white */
-  --bg-card: #ffffff;
-  /* white */
-  --bg-inp: #e4e4e7;
-  /* zinc-200 */
+  --bg-card: rgba(255, 255, 255, 0.95);
+  --bg-inp: #f1f5f9;
   --bg-head: #ffffff;
-  /* white */
-  --border-p: #e4e4e7;
-  /* zinc-200 */
-  --border-s: #d4d4d8;
-  /* zinc-300 */
-  --tx-p: #09090b;
-  /* zinc-950 - Strong Crisp Text */
-  --tx-s: #3f3f46;
-  /* zinc-700 - Highly readable secondary text */
-  --tx-m: #71717a;
-  /* zinc-500 */
-  --bg-btn-hover: #e4e4e7;
-  /* zinc-200 */
-  --tx-btn-hover: #000000;
+  
+  --border-p: #e2e8f0;
+  --border-s: #cbd5e1;
+  
+  --tx-p: #0f172a;
+  --tx-s: #475569;
+  --tx-m: #64748b;
+  
+  --bg-btn-hover: #f1f5f9;
+  --tx-btn-hover: #0f172a;
+
+  --hust-red: #b91c1c;
+  --hust-red-hover: #dc2626;
+  --hust-red-dark: #991b1b;
+  --hust-gold: #d97706;
+  --accent-cyan: #0284c7;
+  --accent-emerald: #059669;
+  --accent-violet: #7c3aed;
 }
 
-/* 3. Base Custom Resets */
+/* 3. Base Custom Resets & Glassmorphism Utility Classes */
 html,
 body,
 #app {
@@ -90,16 +88,47 @@ body,
   margin: 0;
   padding: 0;
   overflow: hidden;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   background-color: var(--bg-app);
   color: var(--tx-p);
-  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
 }
 
-/* Custom Scrollbar dynamic theme binding */
+.glass-panel {
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-p);
+}
+
+.glass-panel-glow {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-p);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+/* Glow Accent Borders */
+.glow-border-cyan {
+  box-shadow: 0 0 15px -3px rgba(6, 182, 212, 0.25);
+  border-color: rgba(6, 182, 212, 0.4);
+}
+
+.glow-border-emerald {
+  box-shadow: 0 0 15px -3px rgba(16, 185, 129, 0.25);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.glow-border-red {
+  box-shadow: 0 0 15px -3px rgba(153, 27, 27, 0.3);
+  border-color: rgba(153, 27, 27, 0.4);
+}
+
+/* 4. Custom Scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -115,28 +144,56 @@ body,
   background: var(--tx-m);
 }
 
-/* 4. Global PrimeVue Theming Integration using CSS variables */
+/* 5. Shimmer and Glow Animations */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, var(--border-p) 25%, var(--border-s) 50%, var(--border-p) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(0.97); }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s infinite ease-in-out;
+}
+
+/* 6. PrimeVue Dark/Light Integration Overrides */
 .p-dialog {
   background: var(--bg-card) !important;
+  backdrop-filter: blur(16px) !important;
   border: 1px solid var(--border-p) !important;
   color: var(--tx-p) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5) !important;
 }
 
 .p-dialog-header {
-  background: var(--bg-card) !important;
+  background: transparent !important;
   color: var(--tx-p) !important;
   border-bottom: 1px solid var(--border-p) !important;
-  padding: 1rem 1.5rem !important;
+  padding: 1.25rem 1.5rem !important;
 }
 
 .p-dialog-content {
-  background: var(--bg-card) !important;
+  background: transparent !important;
   color: var(--tx-p) !important;
   padding: 1.5rem !important;
 }
 
 .p-dialog-footer {
-  background: var(--bg-card) !important;
+  background: transparent !important;
   border-top: 1px solid var(--border-p) !important;
   padding: 1rem 1.5rem !important;
 }
@@ -145,10 +202,12 @@ body,
   background: var(--bg-inp) !important;
   border: 1px solid var(--border-p) !important;
   color: var(--tx-p) !important;
+  border-radius: 10px !important;
 }
 
 .p-select-label {
   color: var(--tx-p) !important;
+  font-size: 0.75rem !important;
 }
 
 .p-select-dropdown {
@@ -157,12 +216,17 @@ body,
 
 .p-select-overlay {
   background: var(--bg-inp) !important;
-  border: 1px solid var(--border-p) !important;
+  border: 1px solid var(--border-s) !important;
   color: var(--tx-p) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4) !important;
 }
 
 .p-select-option {
   color: var(--tx-p) !important;
+  font-size: 0.75rem !important;
+  padding: 8px 12px !important;
+  border-radius: 6px !important;
 }
 
 .p-select-option:hover {
@@ -177,15 +241,21 @@ body,
 /* Slider component integration */
 .p-slider {
   background: var(--border-s) !important;
+  height: 6px !important;
+  border-radius: 9999px !important;
 }
 
 .p-slider-handle {
   background: var(--hust-red) !important;
-  border-color: var(--hust-red) !important;
+  border: 2px solid #ffffff !important;
+  width: 16px !important;
+  height: 16px !important;
+  margin-top: -5px !important;
+  box-shadow: 0 0 10px rgba(153, 27, 27, 0.5) !important;
 }
 
 .p-slider-range {
-  background: var(--hust-red) !important;
+  background: linear-gradient(90deg, var(--hust-red), var(--hust-gold)) !important;
 }
 
 /* InputNumber component integration */
@@ -193,6 +263,7 @@ body,
   background: var(--bg-inp) !important;
   color: var(--tx-p) !important;
   border-color: var(--border-p) !important;
+  border-radius: 8px !important;
 }
 
 .p-inputnumber-button {
@@ -206,24 +277,6 @@ body,
   color: var(--tx-p) !important;
 }
 
-/* Shimmer animation for chat typing */
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-.animate-shimmer {
-  background: linear-gradient(90deg, var(--border-p) 25%, var(--border-s) 50%, var(--border-p) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-}
-
-/* 5. Inputs & Dialog Forms General Theme Integration */
 .p-inputtext,
 input.p-inputtext,
 .p-password-input,
@@ -232,6 +285,7 @@ input {
   background-color: var(--bg-inp) !important;
   color: var(--tx-p) !important;
   border: 1px solid var(--border-p) !important;
+  border-radius: 8px !important;
 }
 
 .p-inputtext::placeholder,
@@ -239,40 +293,9 @@ input::placeholder {
   color: var(--tx-m) !important;
 }
 
-.p-dialog button {
-  background-color: var(--bg-inp) !important;
-  border: 1px solid var(--border-p) !important;
-  color: var(--tx-p) !important;
-}
-
-.p-dialog button:hover {
-  background-color: var(--bg-btn-hover) !important;
-  color: var(--tx-btn-hover) !important;
-}
-
-.p-dialog button.bg-hust-red {
-  background-color: var(--hust-red) !important;
-  color: #ffffff !important;
-  border: none !important;
-}
-.p-dialog button.bg-hust-red:hover {
-  background-color: var(--hust-red-hover) !important;
-}
-
-.p-dialog a {
-  color: var(--hust-gold) !important;
-}
-.p-dialog a:hover {
-  text-decoration: underline !important;
-}
-.p-dialog span.h-px {
-  background-color: var(--border-p) !important;
-}
-
-/* Scoped font-size patch for inline chat rename textfield */
 .rename-input {
   font-size: 11px !important;
   padding: 2px 6px !important;
-  height: 24px !important;
+  height: 26px !important;
   line-height: 1.2 !important;
 }
