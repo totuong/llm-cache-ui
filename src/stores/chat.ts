@@ -91,44 +91,6 @@ export const useChatStore = defineStore('chat', () => {
     }
   ])
 
-  // Initialize from LocalStorage
-  const storedChat = localStorage.getItem('hust_chats_history')
-  if (storedChat) {
-    try {
-      const parsed = JSON.parse(storedChat)
-      sessions.value = parsed.sessions || []
-      activeSessionId.value = parsed.activeSessionId || null
-      selectedModelId.value = parsed.selectedModelId || 'Qwen/Qwen2.5-1.5B-Instruct'
-      apiMode.value = parsed.apiMode || 'live'
-
-      // Clean up multiple empty sessions from legacy state
-      let emptyCount = 0
-      sessions.value = sessions.value.filter(s => {
-        if (s.messages.length === 0) {
-          emptyCount++
-          return emptyCount === 1 // keep only 1 empty session max
-        }
-        return true
-      })
-    } catch (e) {
-      console.error('Failed to parse chat history', e)
-    }
-  }
-
-  // If no sessions, create one default
-  if (sessions.value.length === 0) {
-    createNewSession()
-  }
-
-  // Check health on store initialization
-  checkHealth()
-
-  async function checkHealth(): Promise<boolean> {
-    const alive = await checkBackendHealth()
-    isBackendLive.value = alive
-    return alive
-  }
-
   const activeSession = computed(() => {
     return sessions.value.find(s => s.id === activeSessionId.value) || null
   })
@@ -178,6 +140,44 @@ export const useChatStore = defineStore('chat', () => {
     activeSessionId.value = newId
     saveToStorage()
     return newSess
+  }
+
+  // Initialize from LocalStorage
+  const storedChat = localStorage.getItem('hust_chats_history')
+  if (storedChat) {
+    try {
+      const parsed = JSON.parse(storedChat)
+      sessions.value = parsed.sessions || []
+      activeSessionId.value = parsed.activeSessionId || null
+      selectedModelId.value = parsed.selectedModelId || 'Qwen/Qwen2.5-1.5B-Instruct'
+      apiMode.value = parsed.apiMode || 'live'
+
+      // Clean up multiple empty sessions from legacy state
+      let emptyCount = 0
+      sessions.value = sessions.value.filter(s => {
+        if (s.messages.length === 0) {
+          emptyCount++
+          return emptyCount === 1 // keep only 1 empty session max
+        }
+        return true
+      })
+    } catch (e) {
+      console.error('Failed to parse chat history', e)
+    }
+  }
+
+  // If no sessions, create one default
+  if (sessions.value.length === 0) {
+    createNewSession()
+  }
+
+  // Check health on store initialization
+  checkHealth()
+
+  async function checkHealth(): Promise<boolean> {
+    const alive = await checkBackendHealth()
+    isBackendLive.value = alive
+    return alive
   }
 
   function selectSession(id: string) {
