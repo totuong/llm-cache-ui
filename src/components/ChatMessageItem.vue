@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import type { Message } from '../stores/chat'
 import { useAuthStore } from '../stores/auth'
 import { useLangStore } from '../stores/lang'
+import { useChatStore } from '../stores/chat'
 
 // Lucide Icons
 import {
@@ -13,6 +14,8 @@ import {
   Check,
   Cpu,
   AlertTriangle,
+  AlertCircle,
+  RefreshCw,
   Info,
   Terminal,
   Sparkles,
@@ -24,6 +27,7 @@ const props = defineProps<{
 
 const authStore = useAuthStore()
 const langStore = useLangStore()
+const chatStore = useChatStore()
 const copied = ref(false)
 
 const userInitials = computed(() => {
@@ -135,6 +139,10 @@ function copyText() {
     copied.value = false
   }, 2500)
 }
+
+function handleRetry() {
+  chatStore.retryMessage(props.message.id)
+}
 </script>
 
 <template>
@@ -187,10 +195,36 @@ function copyText() {
         </div>
 
         <!-- Loading Shimmer State -->
-        <div v-if="!props.message.content" class="w-full flex flex-col gap-2 py-2 text-left">
+        <div v-if="!props.message.content && !props.message.isError" class="w-full flex flex-col gap-2 py-2 text-left">
           <div class="h-3 bg-border-s rounded-lg animate-shimmer w-3/4"></div>
           <div class="h-3 bg-border-s rounded-lg animate-shimmer w-1/2"></div>
           <div class="h-3 bg-border-s rounded-lg animate-shimmer w-5/6"></div>
+        </div>
+
+        <!-- Error State with Reload / Retry Button -->
+        <div
+          v-else-if="props.message.isError"
+          class="w-full bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4 text-xs space-y-2.5 text-left shadow-xs"
+        >
+          <div class="flex items-start gap-2.5 text-rose-400">
+            <AlertCircle class="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <p class="font-bold text-rose-400">Lỗi phản hồi từ máy chủ</p>
+              <p class="text-[11px] text-tx-s mt-0.5 leading-relaxed font-mono">
+                {{ props.message.errorMessage || 'Không thể tạo phản hồi từ mô hình LLM. Vui lòng kiểm tra lại.' }}
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 pt-1 border-t border-rose-500/20">
+            <button
+              class="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[11px] px-3.5 py-1.5 rounded-xl font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+              :disabled="chatStore.isTyping"
+              @click="handleRetry"
+            >
+              <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': chatStore.isTyping }" />
+              <span>Thử lại (Load lại)</span>
+            </button>
+          </div>
         </div>
 
         <!-- Render Assistant Content -->
@@ -222,7 +256,7 @@ function copyText() {
 
             <span class="text-[10px] text-tx-s flex items-center gap-1 bg-bg-inp border border-border-p px-2.5 py-1 rounded-lg font-mono">
               <Coins class="w-3 h-3 text-hust-gold" />
-              {{ langStore.locale === 'vi' ? 'Tiết kiệm' : 'Saved' }}: <strong class="text-emerald-400">{{ props.message.cacheStatus.usage?.cachedTokens || props.message.cacheStatus.tokens }} Tokens</strong>
+              {{ langStore.locale === 'vi' ? 'Tiết kiệm' : 'Saved' }}: <strong class="text-emerald-400">{{ (props.message.cacheStatus.usage?.cachedTokens ?? 0) }} Tokens</strong>
             </span>
           </template>
 
@@ -246,7 +280,7 @@ function copyText() {
 
           <span v-if="props.message.cacheStatus.vllmMetrics" class="text-[10px] text-accent-cyan bg-accent-cyan/15 border border-accent-cyan/30 px-2.5 py-1 rounded-lg font-mono flex items-center gap-1">
             <Cpu class="w-3 h-3" />
-            KV Cache GPU: {{ props.message.cacheStatus.vllmMetrics.kvCacheUsagePerc?.toFixed(1) }}%
+            KV Cache GPU: {{ (props.message.cacheStatus.vllmMetrics.kvCacheUsagePerc ?? 0).toFixed(1) }}%
           </span>
         </div>
 

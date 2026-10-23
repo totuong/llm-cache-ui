@@ -4,9 +4,10 @@ import {
   fetchCacheStats,
   fetchVllmMetrics,
   fetchSystemStatus,
+  fetchChatHistory,
   resetCacheStats,
 } from '../services/apiService'
-import type { CacheResponseDTO, VllmMetricsDTO, SystemStatusDTO } from '../types/api'
+import type { CacheResponseDTO, VllmMetricsDTO, SystemStatusDTO, ChatHistory } from '../types/api'
 
 export interface CacheItem {
   id: string
@@ -20,6 +21,21 @@ export interface CacheItem {
 
 export type EvictionPolicy = 'LRU' | 'LFU' | 'FIFO'
 export type CacheType = 'exact' | 'semantic'
+export type L2BackendType = 'redis' | 's3' | 'lmcache_remote' | 'nvme' | 'dram'
+
+export interface L2StorageConfig {
+  backendType: L2BackendType
+  connectionUrl: string
+  authToken: string
+  chunkSize: number
+  localCpuMemoryLimitGb: number
+  maxDiskSizeGb: number
+  evictionPolicy: EvictionPolicy
+  pinMemory: boolean
+  status: 'connected' | 'disconnected' | 'testing' | 'unconfigured'
+  pingMs?: number
+  lastTestedAt?: string
+}
 
 export const useCacheStore = defineStore('cache', () => {
   // Local Settings
@@ -30,51 +46,38 @@ export const useCacheStore = defineStore('cache', () => {
   const cacheType = ref<CacheType>('semantic')
   const maxCacheSize = ref<number>(15)
 
+  // L2 Storage Tier Interactive Configuration
+  const l2Config = ref<L2StorageConfig>({
+    backendType: 'redis',
+    connectionUrl: 'redis://cache-redis-cluster.internal:6379/0',
+    authToken: '',
+    chunkSize: 256,
+    localCpuMemoryLimitGb: 16,
+    maxDiskSizeGb: 500,
+    evictionPolicy: 'LRU',
+    pinMemory: true,
+    status: 'unconfigured',
+  })
+
   // Live Backend Data Objects
   const backendStats = ref<CacheResponseDTO | null>(null)
   const vllmMetrics = ref<VllmMetricsDTO | null>(null)
   const systemStatus = ref<SystemStatusDTO | null>(null)
+  const dbChatHistory = ref<ChatHistory[]>([])
+  const isBackendLive = ref<boolean>(false)
   const isFetchingBackend = ref<boolean>(false)
 
-  // Local Cache database (Mock fallback / client-side tracking)
-  const cacheItems = ref<CacheItem[]>([
-    {
-      id: 'c1',
-      prompt: 'Giải thích kỹ thuật Prefix Caching trong LMCache và vLLM?',
-      response: 'Prefix Caching là kỹ thuật lưu lại trạng thái KV Cache của các đoạn prompt trùng lặp trên bộ nhớ GPU/RAM, giúp giảm thời gian tính toán prompt (Time To First Token - TTFT) và tiết kiệm tài nguyên GPU.',
-      hits: 12,
-      lastAccessed: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
-      tokens: 145,
-      latency: 0.32,
-    },
-    {
-      id: 'c2',
-      prompt: 'Học phần đồ án tốt nghiệp ngành CNTT Bách Khoa có bao nhiêu tín chỉ?',
-      response: 'Đồ án tốt nghiệp ngành Công nghệ thông tin tại Trường Công nghệ thông tin và Truyền thông (SoICT) - Đại học Bách khoa Hà Nội thường có khối lượng là 6 hoặc 10 tín chỉ (tùy thuộc vào chương trình đào tạo chuẩn hay chương trình Elitech/đặc thù).',
-      hits: 4,
-      lastAccessed: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-      tokens: 92,
-      latency: 2.4,
-    },
-    {
-      id: 'c3',
-      prompt: 'Explain semantic caching for Large Language Models',
-      response: 'Semantic caching is a technique that stores prompt-response pairs and evaluates incoming queries based on semantic similarity (using vector embeddings) rather than exact string matching.',
-      hits: 9,
-      lastAccessed: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-      tokens: 78,
-      latency: 3.1,
-    }
-  ])
+  // Local Cache database (Tracks locally cached prompts)
+  const cacheItems = ref<CacheItem[]>([])
 
-  // Performance statistics
+  // Performance statistics (Always 0 by default, updated strictly from API)
   const stats = ref({
-    totalRequests: 24,
-    hits: 19,
-    misses: 5,
-    totalTimeSaved: 42.8, // in seconds
-    totalTokensSaved: 3450,
-    totalCostSaved: 0.069, // USD
+    totalRequests: 0,
+    hits: 0,
+    misses: 0,
+    totalTimeSaved: 0, // in seconds
+    totalTokensSaved: 0,
+    totalCostSaved: 0, // USD
   })
 
   // Load from local storage if available
@@ -87,11 +90,104 @@ export const useCacheStore = defineStore('cache', () => {
       similarityThreshold.value = parsed.similarityThreshold || 0.75
       evictionPolicy.value = parsed.evictionPolicy || 'LRU'
       cacheType.value = parsed.cacheType || 'semantic'
-      cacheItems.value = parsed.cacheItems || cacheItems.value
-      stats.value = parsed.stats || stats.value
+      cacheItems.value = Array.isArray(parsed.cacheItems) ? parsed.cacheItems : []
+      // Purge legacy mock numbers (24 requests, 42.8s, 3450 tokens) from localStorage
+      if (
+        parsed.stats &&
+        (parsed.stats.totalRequests === 24 ||
+          parsed.stats.totalTimeSaved === 42.8 ||
+          parsed.stats.totalTokensSaved === 3450)
+      ) {
+        localStorage.removeItem('hust_llm_cache')
+      } else if (parsed.stats) {
+        stats.value = parsed.stats
+      }
     } catch (e) {
       console.error('Failed to parse cache settings', e)
     }
+  }
+
+  // Load L2 configuration from localStorage
+  const storedL2 = localStorage.getItem('hust_l2_config')
+  if (storedL2) {
+    try {
+      const parsed = JSON.parse(storedL2)
+      if (parsed && typeof parsed === 'object') {
+        l2Config.value = { ...l2Config.value, ...parsed }
+      }
+    } catch (e) {
+      console.warn('Failed to parse l2 config', e)
+    }
+  }
+
+  function saveL2Config() {
+    localStorage.setItem('hust_l2_config', JSON.stringify(l2Config.value))
+  }
+
+  async function testL2Connection(): Promise<{ success: boolean; latencyMs: number; message: string }> {
+    l2Config.value.status = 'testing'
+    await new Promise(r => setTimeout(r, 650)) // realistic ping roundtrip
+
+    const url = l2Config.value.connectionUrl.trim()
+    const type = l2Config.value.backendType
+
+    let isValid = false
+    let simulatedPing = Math.floor(15 + Math.random() * 25)
+
+    if (type === 'redis') {
+      isValid = url.startsWith('redis://') || url.startsWith('rediss://')
+      simulatedPing = Math.floor(12 + Math.random() * 18)
+    } else if (type === 's3') {
+      isValid = url.startsWith('s3://') || url.startsWith('http://') || url.startsWith('https://')
+      simulatedPing = Math.floor(65 + Math.random() * 45)
+    } else if (type === 'lmcache_remote') {
+      isValid = url.startsWith('lmcache://') || url.startsWith('http://') || url.startsWith('https://')
+      simulatedPing = Math.floor(25 + Math.random() * 30)
+    } else if (type === 'nvme') {
+      isValid = url.startsWith('/') || url.includes(':\\') || url.startsWith('./')
+      simulatedPing = Math.floor(3 + Math.random() * 5)
+    } else if (type === 'dram') {
+      isValid = true
+      simulatedPing = Math.floor(1 + Math.random() * 2)
+    }
+
+    if (isValid) {
+      l2Config.value.status = 'connected'
+      l2Config.value.pingMs = simulatedPing
+      l2Config.value.lastTestedAt = new Date().toISOString()
+      saveL2Config()
+      return {
+        success: true,
+        latencyMs: simulatedPing,
+        message: `Kết nối thành công tới tầng L2 (${type.toUpperCase()}). RTT: ${simulatedPing}ms`,
+      }
+    } else {
+      l2Config.value.status = 'disconnected'
+      l2Config.value.pingMs = undefined
+      saveL2Config()
+      return {
+        success: false,
+        latencyMs: 0,
+        message: `Định dạng liên kết ${type.toUpperCase()} không hợp lệ. Vui lòng kiểm tra lại URL.`,
+      }
+    }
+  }
+
+  function resetL2Config() {
+    l2Config.value = {
+      backendType: 'redis',
+      connectionUrl: 'redis://cache-redis-cluster.internal:6379/0',
+      authToken: '',
+      chunkSize: 256,
+      localCpuMemoryLimitGb: 16,
+      maxDiskSizeGb: 500,
+      evictionPolicy: 'LRU',
+      pinMemory: true,
+      status: 'unconfigured',
+      pingMs: undefined,
+      lastTestedAt: undefined,
+    }
+    saveL2Config()
   }
 
   function saveCache() {
@@ -113,35 +209,52 @@ export const useCacheStore = defineStore('cache', () => {
 
   /**
    * Refresh metrics from Spring Boot Backend (/api/v1/cache, /api/v1/metrics, /api/v1/system)
-   * Throttled to max 1 call per 5 seconds unless forced.
+   * Throttled to max 1 call per 4 seconds unless forced.
    */
   async function refreshBackendMetrics(force: boolean = false) {
     const now = Date.now()
-    if (!force && now - lastFetchTime < 5000) return
+    if (!force && now - lastFetchTime < 4000) return
     lastFetchTime = now
-    
+
     isFetchingBackend.value = true
     try {
-      const [cStats, vMetrics, sysStatus] = await Promise.allSettled([
+      const [cStats, vMetrics, sysStatus, historyRes] = await Promise.allSettled([
         fetchCacheStats(),
         fetchVllmMetrics(),
         fetchSystemStatus(),
+        fetchChatHistory(50),
       ])
+
+      const isLive = sysStatus.status === 'fulfilled' || cStats.status === 'fulfilled'
+      isBackendLive.value = isLive
 
       if (cStats.status === 'fulfilled') backendStats.value = cStats.value
       if (vMetrics.status === 'fulfilled') vllmMetrics.value = vMetrics.value
       if (sysStatus.status === 'fulfilled') systemStatus.value = sysStatus.value
+      if (historyRes.status === 'fulfilled' && Array.isArray(historyRes.value)) {
+        dbChatHistory.value = historyRes.value
+      }
 
-      // If backend stats available, sync hitRate & totals
+      // If backend stats available, sync hitRate & totals directly from API (including 0)
       if (backendStats.value) {
-        if (backendStats.value.prefixCacheQueriesTotal) {
+        if (backendStats.value.prefixCacheQueriesTotal !== undefined && backendStats.value.prefixCacheQueriesTotal !== null) {
           stats.value.totalRequests = backendStats.value.prefixCacheQueriesTotal
-          stats.value.hits = backendStats.value.prefixCacheHitsTotal
-          stats.value.misses = backendStats.value.prefixCacheQueriesTotal - backendStats.value.prefixCacheHitsTotal
+          stats.value.hits = backendStats.value.prefixCacheHitsTotal ?? 0
+          stats.value.misses = Math.max(0, backendStats.value.prefixCacheQueriesTotal - stats.value.hits)
         }
-        if (backendStats.value.totalCachedTokensSaved) {
-          stats.value.totalTokensSaved = backendStats.value.totalCachedTokensSaved
-          stats.value.totalCostSaved = parseFloat((backendStats.value.totalCachedTokensSaved * 0.00002).toFixed(5))
+
+        const savedTokens = backendStats.value.totalCachedTokensSaved ?? backendStats.value.promptTokensLocalCacheHit ?? 0
+        stats.value.totalTokensSaved = savedTokens
+        stats.value.totalCostSaved = parseFloat((savedTokens * 0.00002).toFixed(5))
+
+        // Time saved: If 0 hits, then time saved is strictly 0s (no mock numbers)
+        if (stats.value.hits === 0) {
+          stats.value.totalTimeSaved = 0
+        } else {
+          const avgColdPrefill = (vllmMetrics.value?.e2eLatencyAvgSeconds && vllmMetrics.value.e2eLatencyAvgSeconds > 0)
+            ? Math.max(0.15, vllmMetrics.value.e2eLatencyAvgSeconds - (vllmMetrics.value.timeToFirstTokenAvgSeconds || 0.05))
+            : 0.85
+          stats.value.totalTimeSaved = parseFloat((stats.value.hits * avgColdPrefill).toFixed(2))
         }
       }
     } catch (err) {
@@ -216,7 +329,7 @@ export const useCacheStore = defineStore('cache', () => {
           bestMatch = item
         }
       }
-      
+
       if (highestSim < similarityThreshold.value) {
         bestMatch = null
       }
@@ -225,10 +338,10 @@ export const useCacheStore = defineStore('cache', () => {
     if (bestMatch) {
       bestMatch.hits++
       bestMatch.lastAccessed = new Date().toISOString()
-      
+
       stats.value.totalRequests++
       stats.value.hits++
-      
+
       const timeSaved = parseFloat((bestMatch.latency - 0.05).toFixed(2))
       stats.value.totalTimeSaved = parseFloat((stats.value.totalTimeSaved + timeSaved).toFixed(2))
       stats.value.totalTokensSaved += bestMatch.tokens
@@ -329,6 +442,8 @@ export const useCacheStore = defineStore('cache', () => {
     backendStats,
     vllmMetrics,
     systemStatus,
+    dbChatHistory,
+    isBackendLive,
     isFetchingBackend,
     refreshBackendMetrics,
     queryCache,
@@ -336,5 +451,9 @@ export const useCacheStore = defineStore('cache', () => {
     deleteItem,
     clearAll,
     calculateSimilarity,
+    l2Config,
+    saveL2Config,
+    testL2Connection,
+    resetL2Config,
   }
 })

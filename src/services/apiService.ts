@@ -30,7 +30,7 @@ const DEFAULT_HEADERS: Record<string, string> = {
 export async function checkBackendHealth(): Promise<boolean> {
   try {
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 800)
+    const timeoutId = setTimeout(() => controller.abort(), 4000)
 
     const res = await fetch(`${API_BASE_URL}/system`, {
       method: 'GET',
@@ -50,10 +50,18 @@ export async function checkBackendHealth(): Promise<boolean> {
 export async function sendChatRequest(
   request: ChatRequest
 ): Promise<ChatResponse> {
+  // Always sanitize model name to prevent 404 from vLLM on unknown models like 'hust-gpt-4o'
+  const modelName = (request.model && request.model.includes('Qwen'))
+    ? request.model
+    : 'Qwen/Qwen2.5-1.5B-Instruct'
+
   const res = await fetch(`${API_BASE_URL}/chat`, {
     method: 'POST',
     headers: { ...DEFAULT_HEADERS, 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
+    body: JSON.stringify({
+      prompt: request.prompt,
+      model: modelName,
+    }),
   })
 
   if (!res.ok) {
@@ -61,7 +69,7 @@ export async function sendChatRequest(
     try {
       const errorData: ResponseObject<null> = await res.json()
       if (errorData.message) errorMsg = errorData.message
-    } catch {}
+    } catch { }
     throw new Error(errorMsg)
   }
 

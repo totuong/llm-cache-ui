@@ -14,6 +14,8 @@ export interface Message {
   sender: 'user' | 'assistant'
   content: string
   timestamp: string
+  isError?: boolean
+  errorMessage?: string
   cacheStatus: {
     hit: boolean
     similarity?: number
@@ -149,8 +151,19 @@ export const useChatStore = defineStore('chat', () => {
       const parsed = JSON.parse(storedChat)
       sessions.value = parsed.sessions || []
       activeSessionId.value = parsed.activeSessionId || null
-      selectedModelId.value = parsed.selectedModelId || 'Qwen/Qwen2.5-1.5B-Instruct'
-      apiMode.value = parsed.apiMode || 'live'
+      
+      const validModel = 'Qwen/Qwen2.5-1.5B-Instruct'
+      selectedModelId.value = (parsed.selectedModelId && parsed.selectedModelId.includes('Qwen')) 
+        ? parsed.selectedModelId 
+        : validModel
+
+      // Sanitize all legacy sessions that may have 'hust-gpt-4o'
+      sessions.value.forEach(s => {
+        if (!s.modelId || !s.modelId.includes('Qwen')) {
+          s.modelId = validModel
+        }
+      })
+      apiMode.value = 'live'
 
       // Clean up multiple empty sessions from legacy state
       let emptyCount = 0
@@ -161,6 +174,7 @@ export const useChatStore = defineStore('chat', () => {
         }
         return true
       })
+      saveToStorage()
     } catch (e) {
       console.error('Failed to parse chat history', e)
     }
@@ -184,7 +198,8 @@ export const useChatStore = defineStore('chat', () => {
     activeSessionId.value = id
     const sess = sessions.value.find(s => s.id === id)
     if (sess) {
-      selectedModelId.value = sess.modelId
+      selectedModelId.value = (sess.modelId && sess.modelId.includes('Qwen')) ? sess.modelId : 'Qwen/Qwen2.5-1.5B-Instruct'
+      sess.modelId = selectedModelId.value
     }
     saveToStorage()
   }
@@ -341,56 +356,147 @@ export const useChatStore = defineStore('chat', () => {
     }
     currentSession.messages.push(assistantMsg)
 
-    // Check if Backend is alive & user is in live mode
-    const isAlive = apiMode.value === 'live' && isBackendLive.value && (await checkHealth())
+    // Directly call Spring Boot Chat API (/api/v1/chat or /chat)
+    const startTime = Date.now()
+    try {
+      const validModel = (selectedModelId.value && selectedModelId.value.includes('Qwen'))
+        ? selectedModelId.value
+        : 'Qwen/Qwen2.5-1.5B-Instruct'
+      selectedModelId.value = validModel
 
-    if (isAlive) {
-      // --- CALL REGULAR SYNCHRONOUS CHAT API (/api/v1/chat) ---
-      const startTime = Date.now()
-      try {
-        const res = await sendChatRequest({
-          prompt: userPrompt,
-          model: selectedModelId.value,
-        })
+      const res = await sendChatRequest({
+        prompt: userPrompt,
+        model: validModel,
+      })
 
-        const msgIndex = currentSession.messages.findIndex(m => m.id === assistantMsgId)
-        const totalMs = res.executionTimeMs || (Date.now() - startTime)
-        const hitRatio = res.usage?.cacheHitRatioPercentage ?? res.vllmMetrics?.prefixCacheHitRatio ?? 0
+      isBackendLive.value = true
 
-        const updatedMsg: Message = {
-          id: assistantMsgId,
-          sender: 'assistant',
-          content: res.response,
-          timestamp: new Date().toISOString(),
-          cacheStatus: {
-            hit: hitRatio > 50,
-            latency: parseFloat((totalMs / 1000).toFixed(2)),
-            tokens: res.usage?.totalTokens || Math.round(res.response.length / 4) + 10,
-            executionTimeMs: totalMs,
-            cacheHitRatioPercentage: hitRatio,
-            usage: res.usage,
-            vllmMetrics: res.vllmMetrics,
-          },
-        }
+      const msgIndex = currentSession.messages.findIndex(m => m.id === assistantMsgId)
+      const totalMs = res.executionTimeMs || (Date.now() - startTime)
+      const hitRatio = res.usage?.cacheHitRatioPercentage ?? res.vllmMetrics?.prefixCacheHitRatio ?? 0
 
-        if (msgIndex !== -1) {
-          currentSession.messages[msgIndex] = updatedMsg
-        } else {
-          currentSession.messages.push(updatedMsg)
-        }
-
-        isTyping.value = false
-        cacheStore.refreshBackendMetrics()
-        saveToStorage()
-        return
-      } catch (err) {
-        console.warn('Regular chat API error, falling back to offline simulation:', err)
-        isBackendLive.value = false
-        executeOfflineSimulation(userPrompt, assistantMsgId)
+      const updatedMsg: Message = {
+        id: assistantMsgId,
+        sender: 'assistant',
+        content: res.response,
+        timestamp: new Date().toISOString(),
+        cacheStatus: {
+          hit: hitRatio > 50 || (res.usage?.cachedTokens ?? 0) > 0,
+          latency: parseFloat((totalMs / 1000).toFixed(2)),
+          tokens: res.usage?.totalTokens || Math.round(res.response.length / 4) + 10,
+          executionTimeMs: totalMs,
+          cacheHitRatioPercentage: hitRatio,
+          usage: res.usage,
+          vllmMetrics: res.vllmMetrics,
+        },
       }
-    } else {
-      // --- OFFLINE SIMULATION MODE ---
-      executeOfflineSimulation(userPrompt, assistantMsgId)
+
+      if (msgIndex !== -1) {
+        currentSession.messages[msgIndex] = updatedMsg
+      } else {
+        currentSession.messages.push(updatedMsg)
+      }
+
+      isTyping.value = false
+      cacheStore.refreshBackendMetrics()
+      saveToStorage()
+      return
+    } catch (err: any) {
+      console.warn('Real chat API error:', err)
+      isBackendLive.value = false
+      isTyping.value = false
+
+      const msgIndex = currentSession.messages.findIndex(m => m.id === assistantMsgId)
+      const errorMsgText = err?.message || 'Không thể kết nối đến API máy chủ. Vui lòng thử lại.'
+      const errorMsg: Message = {
+        id: assistantMsgId,
+        sender: 'assistant',
+        content: '',
+        isError: true,
+        errorMessage: errorMsgText,
+        timestamp: new Date().toISOString(),
+        cacheStatus: null,
+      }
+
+      if (msgIndex !== -1) {
+        currentSession.messages[msgIndex] = errorMsg
+      }
+      saveToStorage()
+    }
+  }
+
+  async function retryMessage(assistantMsgId: string) {
+    if (!activeSession.value || isTyping.value) return
+    const currentSession = activeSession.value
+    const msgIndex = currentSession.messages.findIndex(m => m.id === assistantMsgId)
+    if (msgIndex === -1) return
+
+    // Find preceding user message
+    let userPrompt = ''
+    for (let i = msgIndex - 1; i >= 0; i--) {
+      if (currentSession.messages[i].sender === 'user') {
+        userPrompt = currentSession.messages[i].content
+        break
+      }
+    }
+    if (!userPrompt) return
+
+    isTyping.value = true
+    currentSession.messages[msgIndex].isError = false
+    currentSession.messages[msgIndex].errorMessage = undefined
+    currentSession.messages[msgIndex].content = ''
+    currentSession.messages[msgIndex].cacheStatus = null
+
+    const startTime = Date.now()
+    try {
+      const validModel = 'Qwen/Qwen2.5-1.5B-Instruct'
+      selectedModelId.value = validModel
+
+      const res = await sendChatRequest({
+        prompt: userPrompt,
+        model: validModel,
+      })
+
+      isBackendLive.value = true
+
+      const totalMs = res.executionTimeMs || (Date.now() - startTime)
+      const hitRatio = res.usage?.cacheHitRatioPercentage ?? res.vllmMetrics?.prefixCacheHitRatio ?? 0
+
+      currentSession.messages[msgIndex] = {
+        id: assistantMsgId,
+        sender: 'assistant',
+        content: res.response,
+        timestamp: new Date().toISOString(),
+        isError: false,
+        cacheStatus: {
+          hit: hitRatio > 50 || (res.usage?.cachedTokens ?? 0) > 0,
+          latency: parseFloat((totalMs / 1000).toFixed(2)),
+          tokens: res.usage?.totalTokens || Math.round(res.response.length / 4) + 10,
+          executionTimeMs: totalMs,
+          cacheHitRatioPercentage: hitRatio,
+          usage: res.usage,
+          vllmMetrics: res.vllmMetrics,
+        },
+      }
+
+      isTyping.value = false
+      cacheStore.refreshBackendMetrics()
+      saveToStorage()
+    } catch (err: any) {
+      console.warn('Retry chat API error:', err)
+      isBackendLive.value = false
+      isTyping.value = false
+
+      currentSession.messages[msgIndex] = {
+        id: assistantMsgId,
+        sender: 'assistant',
+        content: '',
+        isError: true,
+        errorMessage: err?.message || 'Không thể kết nối đến máy chủ. Vui lòng thử lại.',
+        timestamp: new Date().toISOString(),
+        cacheStatus: null,
+      }
+      saveToStorage()
     }
   }
 
@@ -495,6 +601,7 @@ export const useChatStore = defineStore('chat', () => {
     renameSession,
     deleteSession,
     sendMessage,
+    retryMessage,
     clearCurrentSession,
   }
 })

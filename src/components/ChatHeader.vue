@@ -13,9 +13,6 @@ import {
   Trash2,
   Moon,
   Sun,
-  Server,
-  Activity,
-  Cpu,
   Sparkles,
 } from 'lucide-vue-next'
 
@@ -56,11 +53,6 @@ function handleClearChat() {
   if (confirm(confirmMsg)) {
     chatStore.clearCurrentSession()
   }
-}
-
-function toggleApiMode() {
-  chatStore.apiMode = chatStore.apiMode === 'live' ? 'mock' : 'live'
-  chatStore.checkHealth()
 }
 </script>
 
@@ -105,50 +97,16 @@ function toggleApiMode() {
       </div>
     </div>
 
-    <!-- Right side: Connection Status, Theme Toggle & Analytics Button -->
+    <!-- Right side: Actions -->
     <div class="flex items-center gap-2">
       <!-- Dark/Light Mode Switcher -->
       <button
         class="text-tx-s hover:text-tx-p p-1.5 rounded-lg hover:bg-bg-btn-hover transition-colors cursor-pointer w-8 h-8 flex items-center justify-center"
-        v-tooltip.bottom="isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'"
+        v-tooltip.bottom="isDarkMode ? 'Chế độ sáng' : 'Chế độ tối'"
         @click="toggleTheme"
       >
         <Sun v-if="isDarkMode" class="w-4 h-4 text-hust-gold" />
         <Moon v-else class="w-4 h-4 text-accent-violet" />
-      </button>
-
-      <!-- Backend Live Health Indicator Button -->
-      <button
-        class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold border transition-all cursor-pointer select-none shadow-xs"
-        :class="[
-          chatStore.isBackendLive && chatStore.apiMode === 'live'
-            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25'
-            : 'bg-amber-500/15 text-amber-400 border-amber-500/30 hover:bg-amber-500/25'
-        ]"
-        v-tooltip.bottom="chatStore.isBackendLive 
-          ? (langStore.locale === 'vi' ? 'Backend Spring Boot (8080) đang kết nối Live' : 'Spring Boot Backend Live (8080)') 
-          : (langStore.locale === 'vi' ? 'Backend ngắt kết nối - đang dùng Chế độ Giả lập Offline' : 'Backend offline - using Mock Mode')"
-        @click="toggleApiMode"
-      >
-        <span class="w-1.5 h-1.5 rounded-full" :class="chatStore.isBackendLive && chatStore.apiMode === 'live' ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'"></span>
-        <span>{{ chatStore.isBackendLive && chatStore.apiMode === 'live' ? 'BACKEND LIVE' : 'MOCK MODE' }}</span>
-      </button>
-
-      <!-- LLM Cache Enable Switch Badge -->
-      <button
-        class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold border transition-all cursor-pointer select-none shadow-xs"
-        :class="[
-          cacheStore.enabled 
-            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25' 
-            : 'bg-bg-inp text-tx-s border-border-s hover:bg-bg-btn-hover'
-        ]"
-        v-tooltip.bottom="cacheStore.enabled 
-          ? (langStore.locale === 'vi' ? 'Click để tắt LMCache Engine' : 'Click to disable LMCache Engine') 
-          : (langStore.locale === 'vi' ? 'Click để bật LMCache Engine' : 'Click to enable LMCache Engine')"
-        @click="cacheStore.enabled = !cacheStore.enabled"
-      >
-        <span class="w-1.5 h-1.5 rounded-full" :class="cacheStore.enabled ? 'bg-emerald-400 animate-ping' : 'bg-tx-m'"></span>
-        <span>LMCache: {{ cacheStore.enabled ? 'ON' : 'OFF' }}</span>
       </button>
 
       <!-- Clear Chat Screen -->
@@ -160,14 +118,14 @@ function toggleApiMode() {
         <Trash2 class="w-4 h-4" />
       </button>
 
-      <!-- Full Dashboard & L2 Advisor Router Link -->
+      <!-- Full Dashboard & L2 Storage Hub Router Link -->
       <router-link
         to="/dashboard"
         class="bg-gradient-to-r from-hust-red/20 to-hust-gold/20 hover:from-hust-red/30 hover:to-hust-gold/30 border border-hust-gold/30 text-tx-p text-xs px-3 py-1.5 rounded-xl flex items-center gap-1.5 font-bold cursor-pointer transition-all duration-200 shadow-xs"
-        v-tooltip.bottom="langStore.locale === 'vi' ? 'Mở Dashboard & Tư vấn L2 Storage' : 'Open Full Dashboard & L2 Storage Advisor'"
+        v-tooltip.bottom="langStore.locale === 'vi' ? 'Mở Dashboard & Cấu hình L2' : 'Open Dashboard & L2 Hub'"
       >
         <Sparkles class="w-4 h-4 text-hust-gold" />
-        <span class="hidden md:inline">{{ langStore.locale === 'vi' ? 'Analytics & L2 Advisor' : 'Dashboard' }}</span>
+        <span class="hidden md:inline">{{ langStore.locale === 'vi' ? 'Dashboard & L2' : 'Dashboard & L2' }}</span>
       </router-link>
 
       <!-- Cache Analytics Quick Drawer Toggle Button -->

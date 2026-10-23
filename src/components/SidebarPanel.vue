@@ -247,7 +247,7 @@ function cancelRename() {
       class="p-3 border-t border-border-p flex flex-col gap-2 shrink-0"
       :class="props.collapsed ? 'items-center' : ''"
     >
-      <!-- Full Dashboard & L2 Advisor Router Link -->
+      <!-- Full Dashboard & L2 Storage Hub Router Link -->
       <router-link
         to="/dashboard"
         v-if="!props.collapsed"
@@ -255,10 +255,10 @@ function cancelRename() {
       >
         <div class="flex items-center gap-2">
           <Sparkles class="w-4 h-4 text-hust-gold" />
-          <span>{{ langStore.locale === 'vi' ? 'Analytics & L2 Advisor' : 'L2 Storage Advisor' }}</span>
+          <span>{{ langStore.locale === 'vi' ? 'Dashboard & Tầng L2' : 'Dashboard & L2 Hub' }}</span>
         </div>
         <span class="bg-hust-gold/20 text-hust-gold text-[9px] px-2 py-0.5 rounded-full font-mono font-bold">
-          NEW
+          L2
         </span>
       </router-link>
 
@@ -266,7 +266,7 @@ function cancelRename() {
         to="/dashboard"
         v-else
         class="w-8 h-8 rounded-xl bg-bg-inp border border-hust-gold/30 text-tx-s hover:bg-bg-btn-hover hover:text-tx-p flex items-center justify-center cursor-pointer transition-all shrink-0 mb-1"
-        v-tooltip.right="langStore.locale === 'vi' ? 'Analytics & Tư vấn L2 Storage' : 'L2 Storage Advisor'"
+        v-tooltip.right="langStore.locale === 'vi' ? 'Dashboard & Tầng L2' : 'Dashboard & L2 Hub'"
       >
         <Sparkles class="w-4 h-4 text-hust-gold" />
       </router-link>
