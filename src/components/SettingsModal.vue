@@ -18,6 +18,7 @@ import {
   Database,
   ExternalLink,
   BookOpen,
+  Server,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -26,6 +27,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void
+  (e: 'open-l2'): void
 }>()
 
 const chatStore = useChatStore()
@@ -161,6 +163,24 @@ function toggleTheme() {
         >
           <RefreshCw class="w-3.5 h-3.5" />
           <span>{{ langStore.t('resetBtn') }}</span>
+        </button>
+      </div>
+
+      <!-- 5. L2 Cache Configuration -->
+      <div class="flex items-center justify-between border-b border-border-p pb-3">
+        <div>
+          <h4 class="text-xs font-bold text-tx-p flex items-center gap-1.5">
+            <Server class="w-3.5 h-3.5 text-hust-gold" />
+            <span>L2 Remote Cache (Redis)</span>
+          </h4>
+          <p class="text-[10px] text-tx-s mt-0.5">Cấu hình kết nối Redis, kiểm tra ping và đồng bộ YAML</p>
+        </div>
+        <button
+          class="border border-border-s bg-bg-inp hover:bg-bg-btn-hover text-tx-p text-xs px-3 py-1.5 rounded-xl flex items-center gap-1.5 font-bold transition-all cursor-pointer shadow-xs"
+          @click="emit('open-l2'); emit('update:visible', false)"
+        >
+          <Sliders class="w-3.5 h-3.5 text-accent-cyan" />
+          <span>Cấu hình L2</span>
         </button>
       </div>
 

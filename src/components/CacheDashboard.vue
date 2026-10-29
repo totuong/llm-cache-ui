@@ -2,6 +2,7 @@
 import { useCacheStore } from '../stores/cache'
 import { useChatStore } from '../stores/chat'
 import { useLangStore } from '../stores/lang'
+import { formatKvCache } from '../utils/formatters'
 import Select from 'primevue/select'
 import Slider from 'primevue/slider'
 import InputNumber from 'primevue/inputnumber'
@@ -303,7 +304,7 @@ const doughnutChartOptions = {
           <div class="bg-bg-app/80 p-2 rounded-lg border border-border-p">
             <p class="text-[9px] text-tx-s font-sans">KV GPU Usage</p>
             <p class="font-bold text-accent-violet mt-0.5">
-              {{ ((cacheStore.backendStats?.kvCacheUsagePerc ?? cacheStore.vllmMetrics?.kvCacheUsagePerc) ?? 0).toFixed(1) }}%
+              {{ formatKvCache(cacheStore.backendStats?.kvCacheUsagePerc ?? cacheStore.vllmMetrics?.kvCacheUsagePerc) }}
             </p>
           </div>
           <div class="bg-bg-app/80 p-2 rounded-lg border border-border-p">
@@ -401,6 +402,34 @@ const doughnutChartOptions = {
               inputClass="bg-bg-app border-border-s text-center py-1 text-tx-p font-mono w-10 text-xs"
             />
           </div>
+        </div>
+
+        <!-- L2 Remote Cache Settings Card -->
+        <div class="bg-bg-inp/40 border border-border-p p-4 rounded-xl space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1.5 font-bold text-tx-p">
+              <Server class="w-3.5 h-3.5 text-hust-gold" />
+              <span>L2 Remote Cache (Redis)</span>
+            </div>
+            <span
+              class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border"
+              :class="cacheStore.l2Config.status === 'connected'
+                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                : 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30'"
+            >
+              {{ cacheStore.l2Config.status.toUpperCase() }}
+            </span>
+          </div>
+          <p class="text-[11px] text-tx-s">
+            Lưu trữ KV Cache phân tán trên Redis để chia sẻ cache giữa các lượt chat & instance.
+          </p>
+          <router-link
+            to="/dashboard"
+            class="w-full bg-bg-inp hover:bg-bg-btn-hover border border-border-s text-tx-p text-xs py-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
+          >
+            <Sliders class="w-3.5 h-3.5 text-hust-gold" />
+            <span>Mở Cấu Hình Kết Nối L2</span>
+          </router-link>
         </div>
 
       </div>

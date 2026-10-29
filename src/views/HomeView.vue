@@ -9,6 +9,7 @@ import ChatInput from '../components/ChatInput.vue'
 import CacheDashboard from '../components/CacheDashboard.vue'
 import AuthModal from '../components/AuthModal.vue'
 import SettingsModal from '../components/SettingsModal.vue'
+import L2CacheConfigModal from '../components/L2CacheConfigModal.vue'
 import Toast from 'primevue/toast'
 import { useToast } from 'primevue/usetoast'
 
@@ -20,6 +21,7 @@ const showSidebar = ref(true) // Collapsible sidebar on desktop
 const showCacheDashboard = ref(true) // Open by default to highlight the thesis metrics
 const showAuthModal = ref(false)
 const showSettingsModal = ref(false)
+const showL2Modal = ref(false)
 
 onMounted(() => {
   const theme = localStorage.getItem('hust_theme') || 'dark'
@@ -144,7 +146,8 @@ function toggleCacheDashboard() {
 
     <!-- 4. Overlay Modal Dialogs -->
     <AuthModal v-model:visible="showAuthModal" />
-    <SettingsModal v-model:visible="showSettingsModal" />
+    <SettingsModal v-model:visible="showSettingsModal" @open-l2="showL2Modal = true" />
+    <L2CacheConfigModal v-model:visible="showL2Modal" />
   </div>
 </template>
 

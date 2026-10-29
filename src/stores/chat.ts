@@ -373,7 +373,8 @@ export const useChatStore = defineStore('chat', () => {
 
       const msgIndex = currentSession.messages.findIndex(m => m.id === assistantMsgId)
       const totalMs = res.executionTimeMs || (Date.now() - startTime)
-      const hitRatio = res.usage?.cacheHitRatioPercentage ?? res.vllmMetrics?.prefixCacheHitRatio ?? 0
+      const rawHitRatio = res.usage?.cacheHitRatioPercentage ?? res.vllmMetrics?.prefixCacheHitRatio ?? 0
+      const hitRatio = rawHitRatio <= 1 && rawHitRatio > 0 ? rawHitRatio * 100 : rawHitRatio
 
       const updatedMsg: Message = {
         id: assistantMsgId,
@@ -460,7 +461,8 @@ export const useChatStore = defineStore('chat', () => {
       isBackendLive.value = true
 
       const totalMs = res.executionTimeMs || (Date.now() - startTime)
-      const hitRatio = res.usage?.cacheHitRatioPercentage ?? res.vllmMetrics?.prefixCacheHitRatio ?? 0
+      const rawHitRatio = res.usage?.cacheHitRatioPercentage ?? res.vllmMetrics?.prefixCacheHitRatio ?? 0
+      const hitRatio = rawHitRatio <= 1 && rawHitRatio > 0 ? rawHitRatio * 100 : rawHitRatio
 
       currentSession.messages[msgIndex] = {
         id: assistantMsgId,

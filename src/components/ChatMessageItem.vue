@@ -4,6 +4,7 @@ import type { Message } from '../stores/chat'
 import { useAuthStore } from '../stores/auth'
 import { useLangStore } from '../stores/lang'
 import { useChatStore } from '../stores/chat'
+import { formatKvCache } from '../utils/formatters'
 
 // Lucide Icons
 import {
@@ -280,7 +281,7 @@ function handleRetry() {
 
           <span v-if="props.message.cacheStatus.vllmMetrics" class="text-[10px] text-accent-cyan bg-accent-cyan/15 border border-accent-cyan/30 px-2.5 py-1 rounded-lg font-mono flex items-center gap-1">
             <Cpu class="w-3 h-3" />
-            KV Cache GPU: {{ (props.message.cacheStatus.vllmMetrics.kvCacheUsagePerc ?? 0).toFixed(1) }}%
+            KV Cache GPU: {{ formatKvCache(props.message.cacheStatus.vllmMetrics.kvCacheUsagePerc) }}
           </span>
         </div>
 

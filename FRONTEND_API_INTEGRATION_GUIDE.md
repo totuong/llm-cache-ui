@@ -243,7 +243,7 @@ export interface VllmMetricsDTO {
   prefixCacheHitRatio: number;
   promptTokensLocalCompute: number;
   promptTokensLocalCacheHit: number;
-  kvCacheUsagePerc: number;
+  kvCacheUsagePerc: number; // Tỉ lệ sử dụng KV Cache GPU (vLLM Prometheus trả về tỉ lệ 0.0 - 1.0, ví dụ 0.05435 tương đương 5.4%)
   numRequestsRunning: number;
   numRequestsWaiting: number;
   promptTokensTotal: number;

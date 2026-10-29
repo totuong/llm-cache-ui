@@ -8,6 +8,13 @@ import {
   resetCacheStats,
 } from '../services/apiService'
 import type { CacheResponseDTO, VllmMetricsDTO, SystemStatusDTO, ChatHistory } from '../types/api'
+import type {
+  L2CacheConfigDTO,
+  RedisConnectionTestRequest,
+  RedisConnectionTestResponse,
+} from '../types/l2Cache'
+import { l2CacheService } from '../services/l2CacheService'
+import { getKvCachePercent } from '../utils/formatters'
 
 export interface CacheItem {
   id: string
@@ -32,7 +39,7 @@ export interface L2StorageConfig {
   maxDiskSizeGb: number
   evictionPolicy: EvictionPolicy
   pinMemory: boolean
-  status: 'connected' | 'disconnected' | 'testing' | 'unconfigured'
+  status: 'connected' | 'disconnected' | 'testing' | 'unconfigured' | 'active' | 'disabled' | 'error'
   pingMs?: number
   lastTestedAt?: string
 }
@@ -52,12 +59,21 @@ export const useCacheStore = defineStore('cache', () => {
     connectionUrl: 'redis://cache-redis-cluster.internal:6379/0',
     authToken: '',
     chunkSize: 256,
-    localCpuMemoryLimitGb: 16,
+    localCpuMemoryLimitGb: 5.0,
     maxDiskSizeGb: 500,
     evictionPolicy: 'LRU',
     pinMemory: true,
     status: 'unconfigured',
   })
+
+  // L2 Remote Cache Real-time State (Redis Backend API)
+  const l2RemoteConfig = ref<L2CacheConfigDTO | null>(null)
+  const isL2Loading = ref<boolean>(false)
+  const isL2Testing = ref<boolean>(false)
+  const isL2Saving = ref<boolean>(false)
+  const l2TestResult = ref<RedisConnectionTestResponse | null>(null)
+  const l2YamlContent = ref<string>('')
+  const l2Error = ref<string | null>(null)
 
   // Live Backend Data Objects
   const backendStats = ref<CacheResponseDTO | null>(null)
@@ -120,66 +136,168 @@ export const useCacheStore = defineStore('cache', () => {
     }
   }
 
-  function saveL2Config() {
+  function saveL2ConfigLocal() {
     localStorage.setItem('hust_l2_config', JSON.stringify(l2Config.value))
   }
 
-  async function testL2Connection(): Promise<{ success: boolean; latencyMs: number; message: string }> {
-    l2Config.value.status = 'testing'
-    await new Promise(r => setTimeout(r, 650)) // realistic ping roundtrip
-
-    const url = l2Config.value.connectionUrl.trim()
-    const type = l2Config.value.backendType
-
-    let isValid = false
-    let simulatedPing = Math.floor(15 + Math.random() * 25)
-
-    if (type === 'redis') {
-      isValid = url.startsWith('redis://') || url.startsWith('rediss://')
-      simulatedPing = Math.floor(12 + Math.random() * 18)
-    } else if (type === 's3') {
-      isValid = url.startsWith('s3://') || url.startsWith('http://') || url.startsWith('https://')
-      simulatedPing = Math.floor(65 + Math.random() * 45)
-    } else if (type === 'lmcache_remote') {
-      isValid = url.startsWith('lmcache://') || url.startsWith('http://') || url.startsWith('https://')
-      simulatedPing = Math.floor(25 + Math.random() * 30)
-    } else if (type === 'nvme') {
-      isValid = url.startsWith('/') || url.includes(':\\') || url.startsWith('./')
-      simulatedPing = Math.floor(3 + Math.random() * 5)
-    } else if (type === 'dram') {
-      isValid = true
-      simulatedPing = Math.floor(1 + Math.random() * 2)
-    }
-
-    if (isValid) {
-      l2Config.value.status = 'connected'
-      l2Config.value.pingMs = simulatedPing
-      l2Config.value.lastTestedAt = new Date().toISOString()
-      saveL2Config()
-      return {
-        success: true,
-        latencyMs: simulatedPing,
-        message: `Kết nối thành công tới tầng L2 (${type.toUpperCase()}). RTT: ${simulatedPing}ms`,
+  // 1. Lấy cấu hình L2 hiện tại từ Backend API
+  async function fetchL2Config(): Promise<L2CacheConfigDTO | null> {
+    isL2Loading.value = true
+    l2Error.value = null
+    try {
+      const data = await l2CacheService.getConfig()
+      l2RemoteConfig.value = data
+      if (data.yamlContent) {
+        l2YamlContent.value = data.yamlContent
       }
-    } else {
+      l2Config.value.backendType = 'redis'
+      l2Config.value.connectionUrl = data.remoteUrl || `redis://${data.host}:${data.port}`
+      l2Config.value.chunkSize = data.chunkSize || 256
+      l2Config.value.localCpuMemoryLimitGb = data.maxLocalCpuSizeGb || 5.0
+      if (data.enabled && data.status === 'ACTIVE') {
+        l2Config.value.status = 'connected'
+      } else if (data.status === 'ERROR') {
+        l2Config.value.status = 'disconnected'
+      } else {
+        l2Config.value.status = 'unconfigured'
+      }
+      saveL2ConfigLocal()
+      return data
+    } catch (err: any) {
+      l2Error.value = err.message || 'Không thể tải cấu hình L2'
+      return null
+    } finally {
+      isL2Loading.value = false
+    }
+  }
+
+  // 2. Kiểm tra kết nối Redis thật qua Backend API (đo Ping RTT)
+  async function testL2Connection(req?: RedisConnectionTestRequest): Promise<{ success: boolean; latencyMs: number; message: string }> {
+    isL2Testing.value = true
+    l2Config.value.status = 'testing'
+    l2Error.value = null
+    try {
+      const host = req?.host || l2RemoteConfig.value?.host || 'localhost'
+      const port = Number(req?.port || l2RemoteConfig.value?.port || 6379)
+      const password = req?.password !== undefined ? req.password : (l2RemoteConfig.value?.password || undefined)
+
+      const result = await l2CacheService.testConnection({
+        host,
+        port,
+        password,
+      })
+      l2TestResult.value = result
+
+      if (result.connected) {
+        l2Config.value.status = 'connected'
+        l2Config.value.pingMs = result.latencyMs
+        l2Config.value.lastTestedAt = new Date().toISOString()
+        saveL2ConfigLocal()
+        return {
+          success: true,
+          latencyMs: result.latencyMs,
+          message: result.message || `Kết nối thành công tới Redis (${result.endpoint}). RTT: ${result.latencyMs}ms`,
+        }
+      } else {
+        l2Config.value.status = 'disconnected'
+        l2Config.value.pingMs = undefined
+        saveL2ConfigLocal()
+        return {
+          success: false,
+          latencyMs: result.latencyMs || 0,
+          message: result.message || 'Kết nối Redis thất bại',
+        }
+      }
+    } catch (err: any) {
+      const errorMsg = err.message || 'Lỗi khi kiểm tra kết nối Redis'
       l2Config.value.status = 'disconnected'
       l2Config.value.pingMs = undefined
-      saveL2Config()
+      saveL2ConfigLocal()
       return {
         success: false,
         latencyMs: 0,
-        message: `Định dạng liên kết ${type.toUpperCase()} không hợp lệ. Vui lòng kiểm tra lại URL.`,
+        message: errorMsg,
       }
+    } finally {
+      isL2Testing.value = false
+    }
+  }
+
+  // 3. Lưu và áp dụng cấu hình L2 (Ghi đè lmcache_vllm.yaml & Reload engine)
+  async function saveL2Config(payload?: Partial<L2CacheConfigDTO>): Promise<L2CacheConfigDTO> {
+    isL2Saving.value = true
+    l2Error.value = null
+    try {
+      const current = l2RemoteConfig.value
+      const body: Partial<L2CacheConfigDTO> = payload || {
+        enabled: current?.enabled ?? true,
+        storageType: 'REDIS',
+        host: current?.host || 'localhost',
+        port: Number(current?.port || 6379),
+        password: current?.password,
+        chunkSize: Number(current?.chunkSize || l2Config.value.chunkSize || 256),
+        maxLocalCpuSizeGb: Number(current?.maxLocalCpuSizeGb || l2Config.value.localCpuMemoryLimitGb || 5.0),
+        remoteSerde: (current?.remoteSerde as any) || 'naive',
+      }
+
+      const updated = await l2CacheService.saveConfig(body)
+      l2RemoteConfig.value = updated
+      if (updated.yamlContent) {
+        l2YamlContent.value = updated.yamlContent
+      }
+      l2Config.value.connectionUrl = updated.remoteUrl || `redis://${updated.host}:${updated.port}`
+      l2Config.value.chunkSize = updated.chunkSize || 256
+      l2Config.value.localCpuMemoryLimitGb = updated.maxLocalCpuSizeGb || 5.0
+      l2Config.value.status = updated.enabled && updated.status === 'ACTIVE' ? 'connected' : 'unconfigured'
+      saveL2ConfigLocal()
+      return updated
+    } catch (err: any) {
+      l2Error.value = err.message || 'Lỗi khi lưu cấu hình L2'
+      throw err
+    } finally {
+      isL2Saving.value = false
+    }
+  }
+
+  // 4. Tắt L2 Cache (chuyển về L1 CPU)
+  async function disableL2Config(): Promise<L2CacheConfigDTO> {
+    isL2Saving.value = true
+    l2Error.value = null
+    try {
+      const updated = await l2CacheService.disableL2()
+      l2RemoteConfig.value = updated
+      if (updated.yamlContent) {
+        l2YamlContent.value = updated.yamlContent
+      }
+      l2Config.value.status = 'unconfigured'
+      saveL2ConfigLocal()
+      return updated
+    } catch (err: any) {
+      l2Error.value = err.message || 'Lỗi khi tắt L2 Cache'
+      throw err
+    } finally {
+      isL2Saving.value = false
+    }
+  }
+
+  // 5. Xem trước file lmcache_vllm.yaml
+  async function fetchL2Yaml(): Promise<string> {
+    try {
+      const yaml = await l2CacheService.getYamlPreview()
+      l2YamlContent.value = yaml
+      return yaml
+    } catch (err: any) {
+      return l2YamlContent.value
     }
   }
 
   function resetL2Config() {
     l2Config.value = {
       backendType: 'redis',
-      connectionUrl: 'redis://cache-redis-cluster.internal:6379/0',
+      connectionUrl: 'redis://localhost:6379',
       authToken: '',
       chunkSize: 256,
-      localCpuMemoryLimitGb: 16,
+      localCpuMemoryLimitGb: 5.0,
       maxDiskSizeGb: 500,
       evictionPolicy: 'LRU',
       pinMemory: true,
@@ -187,7 +305,7 @@ export const useCacheStore = defineStore('cache', () => {
       pingMs: undefined,
       lastTestedAt: undefined,
     }
-    saveL2Config()
+    saveL2ConfigLocal()
   }
 
   function saveCache() {
@@ -218,14 +336,15 @@ export const useCacheStore = defineStore('cache', () => {
 
     isFetchingBackend.value = true
     try {
-      const [cStats, vMetrics, sysStatus, historyRes] = await Promise.allSettled([
+      const [cStats, vMetrics, sysStatus, historyRes, l2Res] = await Promise.allSettled([
         fetchCacheStats(),
         fetchVllmMetrics(),
         fetchSystemStatus(),
         fetchChatHistory(50),
+        fetchL2Config(),
       ])
 
-      const isLive = sysStatus.status === 'fulfilled' || cStats.status === 'fulfilled'
+      const isLive = sysStatus.status === 'fulfilled' || cStats.status === 'fulfilled' || l2Res.status === 'fulfilled'
       isBackendLive.value = isLive
 
       if (cStats.status === 'fulfilled') backendStats.value = cStats.value
@@ -422,11 +541,17 @@ export const useCacheStore = defineStore('cache', () => {
 
   const hitRate = computed(() => {
     // Prefer backend stats hit ratio if present
-    if (backendStats.value && backendStats.value.prefixCacheHitRatio !== undefined) {
-      return Math.round(backendStats.value.prefixCacheHitRatio)
+    if (backendStats.value && backendStats.value.prefixCacheHitRatio !== undefined && backendStats.value.prefixCacheHitRatio !== null) {
+      const val = backendStats.value.prefixCacheHitRatio
+      return Math.round(val <= 1 && val > 0 ? val * 100 : val)
     }
     if (stats.value.totalRequests === 0) return 0
     return Math.round((stats.value.hits / stats.value.totalRequests) * 100)
+  })
+
+  const kvCacheUsagePercentage = computed(() => {
+    const raw = backendStats.value?.kvCacheUsagePerc ?? vllmMetrics.value?.kvCacheUsagePerc ?? 0
+    return getKvCachePercent(raw)
   })
 
   return {
@@ -439,6 +564,7 @@ export const useCacheStore = defineStore('cache', () => {
     cacheItems,
     stats,
     hitRate,
+    kvCacheUsagePercentage,
     backendStats,
     vllmMetrics,
     systemStatus,
@@ -452,8 +578,18 @@ export const useCacheStore = defineStore('cache', () => {
     clearAll,
     calculateSimilarity,
     l2Config,
+    l2RemoteConfig,
+    isL2Loading,
+    isL2Testing,
+    isL2Saving,
+    l2TestResult,
+    l2YamlContent,
+    l2Error,
+    fetchL2Config,
     saveL2Config,
     testL2Connection,
+    disableL2Config,
+    fetchL2Yaml,
     resetL2Config,
   }
 })
