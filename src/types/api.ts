@@ -46,9 +46,30 @@ export interface ChatRequest {
   model?: string
 }
 
+// Authentication Request & Response DTOs
+export interface RegisterRequest {
+  username: string
+  password: string
+  email?: string
+}
+
+export interface LoginRequest {
+  username: string
+  password: string
+}
+
+export interface AuthData {
+  accessToken: string
+  tokenType: string
+  userId: number
+  username: string
+  expiresInMs: number
+}
+
 // Chat History Record stored in PostgreSQL
 export interface ChatHistory {
   id: number
+  userId?: number
   prompt: string
   response: string
   model: string

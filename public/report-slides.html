@@ -1,0 +1,1241 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Báo Cáo Đề Tài: Tối Ưu Hóa Suy Luận LLM Với LMCache & vLLM - HUST</title>
+  
+  <!-- Reveal.js CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/reveal.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/theme/white.min.css" id="theme">
+  <!-- Highlight.js Theme for Code (Light & Clean GitHub Theme) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  
+  <!-- Google Fonts: Lato (Chính thức theo template HUST) & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,300;0,400;0,700;0,900;1,400&family=JetBrains+Mono:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@600;700;800;900&display=swap" rel="stylesheet">
+  
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root {
+      --hust-red: #c00000;
+      --hust-red-dark: #990000;
+      --hust-red-light: #fef2f2;
+      --hust-gold: #e59c0a;
+      --hust-gold-dark: #b45309;
+      --hust-gold-light: #fffbeb;
+      --tx-main: #0f172a;
+      --tx-muted: #64748b;
+      --tx-light: #ffffff;
+      --bg-card: #ffffff;
+      --border-card: #e2e8f0;
+      --accent-blue: #0284c7;
+      --accent-emerald: #059669;
+      --accent-purple: #7c3aed;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: #f1f5f9;
+      font-family: 'Lato', sans-serif;
+      color: var(--tx-main);
+      margin: 0;
+      overflow: hidden;
+    }
+
+    .reveal {
+      font-family: 'Lato', sans-serif;
+      color: var(--tx-main);
+      font-size: 24px;
+    }
+
+    .reveal .slides {
+      text-align: left;
+    }
+
+    /* Template Header Ribbon Layout */
+    .hust-slide-header {
+      position: absolute;
+      top: -30px;
+      left: 0;
+      right: 0;
+      height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 40px;
+      z-index: 10;
+    }
+
+    .hust-slide-title {
+      color: #ffffff;
+      font-family: 'Lato', sans-serif;
+      font-size: 1.15em;
+      font-weight: 900;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      margin: 0;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .hust-header-logo {
+      height: 38px;
+      background: #ffffff;
+      padding: 4px 10px;
+      border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+
+    /* Main Content Container sitting on the bright white canvas */
+    .slide-body {
+      margin-top: 50px;
+      padding: 10px 10px;
+    }
+
+    /* Professional Academic Cards (Light Theme) */
+    .hust-card {
+      background: #ffffff;
+      border: 1px solid var(--border-card);
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.06), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
+      transition: all 0.25s ease;
+    }
+
+    .hust-card:hover {
+      box-shadow: 0 10px 24px -4px rgba(15, 23, 42, 0.1);
+    }
+
+    .card-red-top { border-top: 4px solid var(--hust-red); }
+    .card-gold-top { border-top: 4px solid var(--hust-gold); }
+    .card-emerald-top { border-top: 4px solid var(--accent-emerald); }
+    .card-blue-top { border-top: 4px solid var(--accent-blue); }
+    .card-purple-top { border-top: 4px solid var(--accent-purple); }
+
+    /* Pill Badges */
+    .hust-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 0.68em;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .badge-red { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+    .badge-gold { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+    .badge-emerald { background: #d1fae5; color: #047857; border: 1px solid #a7f3d0; }
+    .badge-blue { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+
+    /* Grids */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .stat-number {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 900;
+      font-size: 2.2em;
+      line-height: 1.1;
+      margin: 4px 0 2px 0;
+    }
+
+    .stat-label {
+      font-size: 0.68em;
+      color: var(--tx-muted);
+      text-transform: uppercase;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+    }
+
+    /* Fixed Bottom Footer */
+    .hust-slide-footer {
+      position: fixed;
+      bottom: 12px;
+      left: 30px;
+      right: 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: var(--hust-red);
+      font-weight: 700;
+      z-index: 1000;
+      pointer-events: none;
+    }
+
+    /* SVG Diagrams */
+    .svg-diagram {
+      width: 100%;
+      height: auto;
+      max-height: 380px;
+      filter: drop-shadow(0 4px 12px rgba(0,0,0,0.06));
+    }
+
+    /* Light Browser Window Mockup */
+    .mockup-window {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 16px 36px -6px rgba(0,0,0,0.12);
+    }
+    .mockup-header {
+      background: #f8fafc;
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .mockup-dots {
+      display: flex;
+      gap: 6px;
+    }
+    .mockup-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .mockup-address {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 3px 12px;
+      font-size: 11px;
+      color: #475569;
+      font-family: 'JetBrains Mono', monospace;
+      flex: 1;
+      max-width: 380px;
+    }
+
+    /* Progress Ladder Bars (Light Mode) */
+    .latency-bar-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 10px 0;
+    }
+    .latency-bar-track {
+      flex: 1;
+      height: 26px;
+      background: #f1f5f9;
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+      border: 1px solid #e2e8f0;
+    }
+    .latency-bar-fill {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      padding-left: 10px;
+      font-size: 0.65em;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+      color: #ffffff;
+    }
+
+    /* Chart Box */
+    .chart-box {
+      position: relative;
+      width: 100%;
+      height: 220px;
+    }
+
+    /* Code Block in Light Mode */
+    .reveal pre {
+      border-radius: 10px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.06);
+      border: 1px solid #e2e8f0;
+      font-size: 0.6em;
+      line-height: 1.45;
+      width: 100%;
+      background: #f8fafc;
+      margin: 0;
+    }
+    .reveal pre code {
+      font-family: 'JetBrains Mono', monospace;
+      max-height: 380px;
+      color: #0f172a;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Fixed Bottom Footer (Theo chuẩn template HUST) -->
+  <div class="hust-slide-footer">
+    <div>ĐẠI HỌC BÁCH KHOA HÀ NỘI — TRƯỜNG CÔNG NGHỆ THÔNG TIN & TRUYỀN THÔNG</div>
+    <div>ĐỀ TÀI: LLM CACHE OPTIMIZATION (vLLM & LMCACHE)</div>
+  </div>
+
+  <div class="reveal">
+    <div class="slides">
+
+      <!-- ========================================== -->
+      <!-- SLIDE 1: COVER SLIDE (HUST RED BACKGROUND) -->
+      <!-- ========================================== -->
+      <section data-background-image="template_assets/image1.png" data-background-size="cover">
+        <div style="text-align: center; max-width: 980px; margin: 0 auto; color: #ffffff;">
+          
+          <!-- HUST Logo in clean white container -->
+          <div style="margin-bottom: 24px;">
+            <img src="template_assets/image13.png" alt="HUST Logo" style="height: 70px; background: #ffffff; padding: 8px 24px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
+          </div>
+
+          <div style="font-size: 0.85em; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: #fde68a; margin-bottom: 12px;">
+            BÁO CÁO NGHIÊN CỨU & ĐÁNH GIÁ THỰC NGHIỆM
+          </div>
+
+          <h1 style="font-size: 2.15em; font-weight: 900; line-height: 1.2; color: #ffffff; margin-bottom: 16px; text-shadow: 0 4px 12px rgba(0,0,0,0.4);">
+            TỐI ƯU HÓA SUY LUẬN LLM VỚI <br>
+            <span style="color: #fde68a;">LMCACHE & PREFIX CACHING</span>
+          </h1>
+
+          <p style="font-size: 0.82em; color: #fecaca; max-width: 820px; margin: 0 auto 30px auto; line-height: 1.6;">
+            Giải pháp triệt tiêu thời gian Prefill, tối ưu hóa độ trễ TTFT và tiết kiệm tài nguyên GPU trên kiến trúc phân tầng kết hợp vLLM Engine
+          </p>
+
+          <!-- 3 Highlight Metric Pills -->
+          <div style="display: flex; justify-content: center; gap: 16px; margin-bottom: 30px;">
+            <div style="background: rgba(255, 255, 255, 0.95); padding: 10px 22px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.2); text-align: left; display: flex; align-items: center; gap: 12px;">
+              <span style="font-size: 1.5em; color: #059669;">⚡</span>
+              <div>
+                <div style="font-size: 0.58em; color: #64748b; font-weight: 800;">GIẢM ĐỘ TRỄ TTFT</div>
+                <div style="font-size: 1.1em; font-weight: 900; color: #059669; font-family: 'JetBrains Mono';">-36.33% (113ms)</div>
+              </div>
+            </div>
+
+            <div style="background: rgba(255, 255, 255, 0.95); padding: 10px 22px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.2); text-align: left; display: flex; align-items: center; gap: 12px;">
+              <span style="font-size: 1.5em; color: #0284c7;">🎯</span>
+              <div>
+                <div style="font-size: 0.58em; color: #64748b; font-weight: 800;">TỶ LỆ HIT CACHE</div>
+                <div style="font-size: 1.1em; font-weight: 900; color: #0284c7; font-family: 'JetBrains Mono';">42.86% (48 Tokens)</div>
+              </div>
+            </div>
+
+            <div style="background: rgba(255, 255, 255, 0.95); padding: 10px 22px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.2); text-align: left; display: flex; align-items: center; gap: 12px;">
+              <span style="font-size: 1.5em; color: #b45309;">🏢</span>
+              <div>
+                <div style="font-size: 0.58em; color: #64748b; font-weight: 800;">LƯU TRỮ PHÂN TẦNG</div>
+                <div style="font-size: 1.1em; font-weight: 900; color: #b45309; font-family: 'JetBrains Mono';">VRAM ➔ DRAM ➔ L2</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Presenter Info -->
+          <div style="display: inline-flex; align-items: center; gap: 20px; background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255,255,255,0.2); padding: 6px 24px; border-radius: 9999px; font-size: 0.68em; color: #ffffff;">
+            <span>Mô hình: Qwen2.5-1.5B</span>
+            <span>•</span>
+            <span>Backend: Spring Boot 3 + vLLM</span>
+            <span>•</span>
+            <span>Hà Nội, 11/2026</span>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- SLIDE 2: THE BOTTLENECK (LIGHT TEMPLATE) -->
+      <!-- ========================================== -->
+      <section data-background-image="template_assets/image3.png" data-background-size="cover">
+        <!-- Top Ribbon Header -->
+        <div class="hust-slide-header">
+          <h2 class="hust-slide-title">
+            <span>01. NÚT THẮT CỔ CHAI TRONG SUY LUẬN LLM</span>
+          </h2>
+          <img src="template_assets/image13.png" alt="HUST" class="hust-header-logo">
+        </div>
+
+        <div class="slide-body">
+          <div class="grid-2" style="align-items: center;">
+            <!-- SVG Visual Diagram of Attention Bottleneck (Light Mode) -->
+            <div class="hust-card" style="padding: 14px;">
+              <div style="font-size: 0.68em; font-weight: 800; color: var(--tx-muted); margin-bottom: 8px; text-transform: uppercase;">
+                SƠ ĐỒ NGHẼN TÀI NGUYÊN: PREFILL VS DECODE
+              </div>
+              
+              <svg class="svg-diagram" viewBox="0 0 460 270" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Background -->
+                <rect width="460" height="270" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+                
+                <!-- Phase 1: Prefill Compute -->
+                <rect x="15" y="20" width="430" height="105" rx="8" fill="#fef2f2" stroke="#f87171" stroke-dasharray="4 2"/>
+                <text x="30" y="42" fill="#b91c1c" font-family="'JetBrains Mono'" font-size="11" font-weight="800">GIAI ĐOẠN 1: PREFILL (Compute-Bound Bottleneck)</text>
+                
+                <!-- Prompt Block -->
+                <rect x="30" y="55" width="90" height="28" rx="6" fill="#ffffff" stroke="#94a3b8"/>
+                <text x="38" y="73" fill="#334155" font-family="'JetBrains Mono'" font-size="9" font-weight="700">Prompt Tokens</text>
+                
+                <!-- Arrow 1 -->
+                <path d="M125 69 H155" stroke="#ef4444" stroke-width="2"/>
+                
+                <!-- GPU Attention Kernel -->
+                <rect x="160" y="50" width="135" height="38" rx="6" fill="#dc2626" stroke="#b91c1c"/>
+                <text x="172" y="67" fill="#ffffff" font-family="'JetBrains Mono'" font-size="10" font-weight="700">Self-Attention</text>
+                <text x="172" y="80" fill="#fecaca" font-family="'JetBrains Mono'" font-size="9" font-weight="800">O(N²) Compute</text>
+                
+                <!-- Arrow 2 -->
+                <path d="M300 69 H330" stroke="#ef4444" stroke-width="2"/>
+                
+                <!-- TTFT Spike alert -->
+                <rect x="335" y="52" width="95" height="34" rx="6" fill="#fee2e2" stroke="#dc2626"/>
+                <text x="344" y="67" fill="#990000" font-family="'JetBrains Mono'" font-size="9" font-weight="800">TTFT Spike!</text>
+                <text x="344" y="79" fill="#b91c1c" font-family="'JetBrains Mono'" font-size="8">Chờ 300ms - 2s</text>
+
+                <text x="30" y="110" fill="#64748b" font-size="9.5">⚠️ Prompt dài hoặc hội thoại lặp lại buộc GPU tính lại 100% phép nhân ma trận!</text>
+
+                <!-- Phase 2: Memory Expansion -->
+                <rect x="15" y="140" width="430" height="110" rx="8" fill="#fffbeb" stroke="#f59e0b" stroke-dasharray="4 2"/>
+                <text x="30" y="162" fill="#b45309" font-family="'JetBrains Mono'" font-size="11" font-weight="800">GIAI ĐOẠN 2: KV CACHE (Bức Tường Bộ Nhớ VRAM)</text>
+                
+                <!-- VRAM block -->
+                <rect x="30" y="178" width="115" height="50" rx="6" fill="#ffffff" stroke="#cbd5e1"/>
+                <text x="40" y="198" fill="#1e293b" font-family="'JetBrains Mono'" font-size="9.5" font-weight="700">GPU VRAM Pool</text>
+                <text x="40" y="214" fill="#b45309" font-family="'JetBrains Mono'" font-size="8.5">16GB / 24GB Max</text>
+
+                <!-- Arrow -->
+                <path d="M150 203 H195" stroke="#f59e0b" stroke-width="2"/>
+
+                <!-- Exploding KV Cache -->
+                <rect x="200" y="174" width="230" height="60" rx="6" fill="#ffffff" stroke="#f59e0b" stroke-width="1.5"/>
+                <text x="212" y="194" fill="#b45309" font-family="'JetBrains Mono'" font-size="9.5" font-weight="800">KV Size = 2 × L × H × D × P</text>
+                <text x="212" y="209" fill="#475569" font-size="8.5">Kích thước tăng tuyến tính theo số request & context</text>
+                <text x="212" y="223" fill="#dc2626" font-weight="800" font-size="8.5">VRAM cạn kiệt ➔ Buộc phải Evict hoặc Crash</text>
+              </svg>
+            </div>
+
+            <!-- Key Insight Cards (Light Mode) -->
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+              <div class="hust-card card-red-top" style="padding: 14px 18px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                  <span class="hust-badge badge-red">THÁCH THỨC 1</span>
+                  <span style="font-weight: 800; font-size: 0.85em; color: #b91c1c;">Tính Toán Trùng Lặp (Redundant Prefill)</span>
+                </div>
+                <p style="font-size: 0.7em; color: #475569; line-height: 1.55;">
+                  Các ứng dụng Chatbot, RAG hay Agent đều dùng chung System Prompt, bối cảnh tài liệu và lịch sử trò chuyện. Việc tính toán lại toàn bộ khiến GPU lãng phí TFLOPS và kéo dài thời gian sinh token đầu tiên.
+                </p>
+              </div>
+
+              <div class="hust-card card-gold-top" style="padding: 14px 18px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                  <span class="hust-badge badge-gold">THÁCH THỨC 2</span>
+                  <span style="font-weight: 800; font-size: 0.85em; color: #b45309;">Chi Phí VRAM GPU Đắt Đỏ (Memory Wall)</span>
+                </div>
+                <p style="font-size: 0.7em; color: #475569; line-height: 1.55;">
+                  Bộ nhớ VRAM trên các GPU (A100, H100, RTX 4090) rất đắt và hữu hạn. Không thể lưu trữ toàn bộ KV Cache lâu dài trên VRAM mà cần cơ chế offload thông minh.
+                </p>
+              </div>
+
+              <div class="hust-card card-emerald-top" style="background: #f0fdf4; padding: 12px 18px;">
+                <div style="font-size: 0.72em; font-weight: 800; color: #047857; display: flex; align-items: center; gap: 6px;">
+                  <span>💡</span> GIẢI PHÁP ĐỀ TÀI: LMCACHE MULTI-TIER & PREFIX CACHING
+                </div>
+                <p style="font-size: 0.68em; color: #166534; margin-top: 4px; line-height: 1.5;">
+                  Đưa KV Cache xuống <strong>Host CPU RAM</strong> và <strong>Redis Cluster L2</strong>, kết hợp băm tiền tố để tái sử dụng ngay lập tức mà <strong>không cần tính lại Prefill</strong>!
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- SLIDE 3: MULTI-TIER ARCHITECTURE (LIGHT) -->
+      <!-- ========================================== -->
+      <section data-background-image="template_assets/image3.png" data-background-size="cover">
+        <!-- Top Ribbon Header -->
+        <div class="hust-slide-header">
+          <h2 class="hust-slide-title">
+            <span>02. KIẾN TRÚC PHÂN TẦNG ĐA CẤP (MULTI-TIER)</span>
+          </h2>
+          <img src="template_assets/image13.png" alt="HUST" class="hust-header-logo">
+        </div>
+
+        <div class="slide-body">
+          <div style="margin-top: -5px;">
+            <!-- Master Architecture Diagram (Light Theme) -->
+            <svg class="svg-diagram" viewBox="0 0 940 375" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <marker id="arrow-blue" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 1 L 10 5 L 0 9 z" fill="#0284c7" />
+                </marker>
+                <marker id="arrow-red" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 1 L 10 5 L 0 9 z" fill="#dc2626" />
+                </marker>
+              </defs>
+
+              <!-- Canvas Container -->
+              <rect width="940" height="375" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+
+              <!-- 1. Left: Client Request & API -->
+              <rect x="25" y="40" width="160" height="295" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
+              <text x="45" y="70" fill="#0369a1" font-family="'JetBrains Mono'" font-size="11.5" font-weight="800">CLIENT LAYER</text>
+              
+              <rect x="40" y="90" width="130" height="50" rx="8" fill="#ffffff" stroke="#94a3b8"/>
+              <text x="50" y="112" fill="#0f172a" font-size="10" font-weight="700">Vue 3 UI Studio</text>
+              <text x="50" y="128" fill="#64748b" font-size="8.5">Prompt & HUD Monitor</text>
+
+              <rect x="40" y="160" width="130" height="60" rx="8" fill="#e0f2fe" stroke="#0284c7"/>
+              <text x="50" y="182" fill="#0369a1" font-size="10" font-weight="800">Spring Boot 3 API</text>
+              <text x="50" y="197" fill="#475569" font-size="8.5">Gateway & Router</text>
+              <text x="50" y="210" fill="#047857" font-family="'JetBrains Mono'" font-size="8.5" font-weight="700">/api/v1/chat</text>
+
+              <!-- Arrow Client to Engine -->
+              <path d="M185 190 H235" stroke="#0284c7" stroke-width="2.5" marker-end="url(#arrow-blue)"/>
+              <text x="195" y="180" fill="#0284c7" font-family="'JetBrains Mono'" font-size="8.5" font-weight="800">Tokens</text>
+
+              <!-- 2. Middle: vLLM & LMCache Engine -->
+              <rect x="240" y="30" width="310" height="315" rx="12" fill="#f1f5f9" stroke="#6366f1" stroke-width="1.5"/>
+              <text x="260" y="60" fill="#4338ca" font-family="'JetBrains Mono'" font-size="12" font-weight="800">vLLM ENGINE + LMCACHE</text>
+              <text x="260" y="76" fill="#64748b" font-size="9">Prefix Matcher & Block Dispatcher</text>
+
+              <rect x="260" y="90" width="270" height="52" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+              <text x="275" y="112" fill="#1e1b4b" font-size="10" font-weight="700">Chunk Hash Generator (256 Tok)</text>
+              <text x="275" y="129" fill="#64748b" font-family="'JetBrains Mono'" font-size="8.5">Blake3(Prefix Tensors) ➔ Chunk ID</text>
+
+              <rect x="260" y="152" width="270" height="52" rx="8" fill="#d1fae5" stroke="#059669"/>
+              <text x="275" y="174" fill="#065f46" font-size="10" font-weight="800">Prefix Cache Hit Lookup</text>
+              <text x="275" y="191" fill="#047857" font-size="8.5" font-weight="700">Match Found? ➔ Skip Prefill Compute!</text>
+
+              <rect x="260" y="214" width="270" height="52" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+              <text x="275" y="235" fill="#0f172a" font-size="10" font-weight="700">Model: Qwen2.5-1.5B-Instruct</text>
+              <text x="275" y="251" fill="#0284c7" font-family="'JetBrains Mono'" font-size="8.5">vLLM PagedAttention v0.6.x</text>
+
+              <!-- Arrows to 3 Tiers -->
+              <path d="M550 115 H595" stroke="#dc2626" stroke-width="2" marker-end="url(#arrow-red)"/>
+              <path d="M550 180 H595" stroke="#d97706" stroke-width="2" marker-end="url(#arrow-blue)"/>
+              <path d="M550 245 H595" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+              <!-- 3. Right: 3-Tier Storage Hierarchy -->
+              <!-- Tier 0 -->
+              <rect x="600" y="30" width="315" height="92" rx="10" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/>
+              <text x="618" y="55" fill="#b91c1c" font-family="'JetBrains Mono'" font-size="10.5" font-weight="800">TIER 0: GPU VRAM (Paged Pool)</text>
+              <text x="618" y="73" fill="#475569" font-size="9">• Tốc độ: <tspan fill="#047857" font-weight="800">&lt; 1 ms</tspan> | Băng thông: ~900 GB/s HBM</text>
+              <text x="618" y="90" fill="#475569" font-size="9">• Dung lượng: 16 - 24 GB VRAM (Giới hạn)</text>
+              <rect x="800" y="94" width="95" height="20" rx="4" fill="#dc2626"/>
+              <text x="812" y="108" fill="#ffffff" font-family="'JetBrains Mono'" font-size="8" font-weight="800">ULTRA FAST</text>
+
+              <!-- Tier 1 -->
+              <rect x="600" y="135" width="315" height="92" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+              <text x="618" y="160" fill="#b45309" font-family="'JetBrains Mono'" font-size="10.5" font-weight="800">TIER 1: HOST DRAM (LMCache)</text>
+              <text x="618" y="178" fill="#475569" font-size="9">• Tốc độ: <tspan fill="#0369a1" font-weight="800">~35 ms</tspan> qua PCIe Bus (DDR5 60GB/s)</text>
+              <text x="618" y="195" fill="#475569" font-size="9">• Dung lượng: 5 GB - 64 GB RAM (Mở rộng rẻ)</text>
+              <rect x="800" y="199" width="95" height="20" rx="4" fill="#d97706"/>
+              <text x="808" y="213" fill="#ffffff" font-family="'JetBrains Mono'" font-size="8" font-weight="800">COST OPTIMAL</text>
+
+              <!-- Tier 2 -->
+              <rect x="600" y="240" width="315" height="92" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+              <text x="618" y="265" fill="#6d28d9" font-family="'JetBrains Mono'" font-size="10.5" font-weight="800">TIER 2: REMOTE REDIS L2 CLUSTER</text>
+              <text x="618" y="283" fill="#475569" font-size="9">• Tốc độ: <tspan fill="#7c3aed" font-weight="800">~15 - 25 ms</tspan> LAN RTT (Nén SerDe)</text>
+              <text x="618" y="300" fill="#475569" font-size="9">• Dung lượng: Phân tán không giới hạn đa Worker</text>
+              <rect x="800" y="304" width="95" height="20" rx="4" fill="#7c3aed"/>
+              <text x="810" y="318" fill="#ffffff" font-family="'JetBrains Mono'" font-size="8" font-weight="800">DISTRIBUTED</text>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- SLIDE 4: PREFIX CACHING PIPELINE (LIGHT) -->
+      <!-- ========================================== -->
+      <section data-background-image="template_assets/image3.png" data-background-size="cover">
+        <!-- Top Ribbon Header -->
+        <div class="hust-slide-header">
+          <h2 class="hust-slide-title">
+            <span>03. QUY TRÌNH HOẠT ĐỘNG CỦA PREFIX CACHING</span>
+          </h2>
+          <img src="template_assets/image13.png" alt="HUST" class="hust-header-logo">
+        </div>
+
+        <div class="slide-body">
+          <!-- Visual Process Pipeline SVG -->
+          <svg class="svg-diagram" viewBox="0 0 920 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="920" height="170" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+
+            <!-- Step 1 -->
+            <rect x="20" y="20" width="165" height="130" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+            <rect x="30" y="30" width="24" height="24" rx="6" fill="#0284c7"/>
+            <text x="38" y="47" fill="#ffffff" font-weight="900" font-size="12">1</text>
+            <text x="62" y="46" fill="#0369a1" font-size="9.5" font-weight="800">TOKENIZE & CHUNK</text>
+            <text x="30" y="74" fill="#475569" font-size="9">Prompt được chia thành các khối cố định:</text>
+            <rect x="30" y="95" width="145" height="30" rx="6" fill="#e0f2fe"/>
+            <text x="38" y="115" fill="#0369a1" font-family="'JetBrains Mono'" font-size="9" font-weight="700">Chunk = 256 tokens</text>
+
+            <path d="M190 85 H210" stroke="#94a3b8" stroke-width="2"/>
+
+            <!-- Step 2 -->
+            <rect x="215" y="20" width="165" height="130" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+            <rect x="225" y="30" width="24" height="24" rx="6" fill="#7c3aed"/>
+            <text x="233" y="47" fill="#ffffff" font-weight="900" font-size="12">2</text>
+            <text x="257" y="46" fill="#6d28d9" font-size="9.5" font-weight="800">HASH BĂM TIỀN TỐ</text>
+            <text x="225" y="74" fill="#475569" font-size="9">Tạo chữ ký đại diện chuỗi tiền tố:</text>
+            <rect x="225" y="95" width="145" height="30" rx="6" fill="#f5f3ff"/>
+            <text x="235" y="115" fill="#7c3aed" font-family="'JetBrains Mono'" font-size="9" font-weight="700">h = Blake3(Prefix)</text>
+
+            <path d="M385 85 H405" stroke="#94a3b8" stroke-width="2"/>
+
+            <!-- Step 3 -->
+            <rect x="410" y="20" width="165" height="130" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+            <rect x="420" y="30" width="24" height="24" rx="6" fill="#d97706"/>
+            <text x="428" y="47" fill="#ffffff" font-weight="900" font-size="12">3</text>
+            <text x="452" y="46" fill="#b45309" font-size="9.5" font-weight="800">ĐỐI SOÁT BLOCK</text>
+            <text x="420" y="74" fill="#475569" font-size="9">Tra cứu trong Block Table của vLLM:</text>
+            <rect x="420" y="95" width="145" height="30" rx="6" fill="#fffbeb"/>
+            <text x="430" y="115" fill="#b45309" font-family="'JetBrains Mono'" font-size="9" font-weight="700">Lookup(h) ➔ Match!</text>
+
+            <path d="M580 85 H600" stroke="#94a3b8" stroke-width="2"/>
+
+            <!-- Step 4 -->
+            <rect x="605" y="20" width="165" height="130" rx="8" fill="#f0fdf4" stroke="#059669"/>
+            <rect x="615" y="30" width="24" height="24" rx="6" fill="#059669"/>
+            <text x="623" y="47" fill="#ffffff" font-weight="900" font-size="12">4</text>
+            <text x="647" y="46" fill="#047857" font-size="9.5" font-weight="800">LOAD KV TENSOR</text>
+            <text x="615" y="74" fill="#166534" font-size="9">Nạp trực tiếp KV tensors vào GPU:</text>
+            <rect x="615" y="95" width="145" height="30" rx="6" fill="#dcfce7"/>
+            <text x="625" y="115" fill="#047857" font-family="'JetBrains Mono'" font-size="9" font-weight="800">Skip Prefill Compute</text>
+
+            <path d="M775 85 H795" stroke="#059669" stroke-width="2"/>
+
+            <!-- Step 5 -->
+            <rect x="800" y="20" width="105" height="130" rx="8" fill="#fef2f2" stroke="#dc2626"/>
+            <text x="815" y="48" fill="#b91c1c" font-size="9.5" font-weight="800">KẾT QUẢ</text>
+            <text x="815" y="78" fill="#b91c1c" font-family="'JetBrains Mono'" font-size="16" font-weight="900">-36.3%</text>
+            <text x="815" y="98" fill="#047857" font-size="8.5" font-weight="700">TTFT Giảm</text>
+            <text x="815" y="120" fill="#64748b" font-size="8">Decode Ngay</text>
+          </svg>
+
+          <!-- Explanation Details -->
+          <div class="grid-2" style="margin-top: 15px;">
+            <div class="hust-card card-blue-top" style="padding: 14px 18px;">
+              <div style="font-size: 0.75em; font-weight: 800; color: #0369a1; margin-bottom: 6px;">
+                🔹 Ví Dụ Thực Nghiệm Với Truy Vấn Mẫu:
+              </div>
+              <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.68em; line-height: 1.5; color: #334155;">
+                Prompt: <span style="color: #047857; font-weight: 800;">[System Context HUST - 48 tokens]</span> + <span style="color: #b45309;">[User Query - 8 tokens]</span><br>
+                ➔ <strong style="color: #047857;">Cache Hit:</strong> 48 / 56 tokens (<strong style="color: #0369a1;">42.86% Hit Ratio</strong>)<br>
+                ➔ GPU chỉ cần tính toán đúng 8 tokens mới thay vì toàn bộ 56 tokens!
+              </div>
+            </div>
+
+            <div class="hust-card card-gold-top" style="padding: 14px 18px;">
+              <div style="font-size: 0.75em; font-weight: 800; color: #b45309; margin-bottom: 6px;">
+                🔹 Thuật Toán Thu Hồi LRU & SerDe Nén:
+              </div>
+              <p style="font-size: 0.68em; color: #475569; line-height: 1.5;">
+                Khi bộ nhớ RAM Host (5GB) hoặc Redis đầy, giải thuật <strong>LRU (Least Recently Used)</strong> tự động giải phóng khối KV ít sử dụng nhất. Dữ liệu đẩy lên Redis được nén qua chuẩn SerDe CacheGen tiết kiệm 75% băng thông mạng.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- SLIDE 5: VISUAL UI MOCKUP STUDIO (LIGHT) -->
+      <!-- ========================================== -->
+      <section data-background-image="template_assets/image3.png" data-background-size="cover">
+        <!-- Top Ribbon Header -->
+        <div class="hust-slide-header">
+          <h2 class="hust-slide-title">
+            <span>04. GIAO DIỆN CHAT STUDIO & TELEMETRY HUB</span>
+          </h2>
+          <img src="template_assets/image13.png" alt="HUST" class="hust-header-logo">
+        </div>
+
+        <div class="slide-body">
+          <!-- Light Mode Browser Mockup -->
+          <div class="mockup-window" style="margin-top: 10px;">
+            <div class="mockup-header">
+              <div class="mockup-dots">
+                <div class="mockup-dot" style="background: #ef4444;"></div>
+                <div class="mockup-dot" style="background: #f59e0b;"></div>
+                <div class="mockup-dot" style="background: #10b981;"></div>
+              </div>
+              <div class="mockup-address">
+                http://localhost:5173/chat-studio
+              </div>
+              <div style="font-size: 10px; color: #047857; font-weight: 800; margin-left: auto; display: flex; align-items: center; gap: 6px;">
+                <span style="width: 8px; height: 8px; background: #10b981; border-radius: 50%; display: inline-block;"></span>
+                CONNECTED (SPRING BOOT LIVE)
+              </div>
+            </div>
+
+            <!-- Content of the UI Mockup -->
+            <div style="display: grid; grid-template-columns: 210px 1fr 240px; height: 265px; background: #ffffff;">
+              <!-- Left Sidebar -->
+              <div style="background: #f8fafc; border-right: 1px solid #e2e8f0; padding: 12px; display: flex; flex-direction: column;">
+                <div style="font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 8px;">
+                  Lịch Sử Hội Thoại (21 Phiên)
+                </div>
+                <div style="background: #e2e8f0; border-radius: 6px; padding: 6px 8px; font-size: 10px; color: #0f172a; font-weight: 700; margin-bottom: 6px;">
+                  💬 Khái niệm LMCache & vLLM
+                </div>
+                <div style="padding: 6px 8px; font-size: 10px; color: #64748b; border-radius: 6px; margin-bottom: 4px;">
+                  💬 Đo đạc TTFT Cold vs Warm
+                </div>
+                <div style="padding: 6px 8px; font-size: 10px; color: #64748b; border-radius: 6px;">
+                  💬 Cấu hình Redis Connector
+                </div>
+
+                <div style="margin-top: auto; border-top: 1px solid #e2e8f0; padding-top: 8px; font-size: 9px; color: #dc2626; display: flex; align-items: center; gap: 6px; font-weight: 700;">
+                  <span>🗑️</span> Xóa toàn bộ lịch sử
+                </div>
+              </div>
+
+              <!-- Center Chat Window -->
+              <div style="padding: 14px; display: flex; flex-direction: column; gap: 10px; background: #ffffff;">
+                <!-- User Msg -->
+                <div style="align-self: flex-end; background: #0284c7; border-radius: 10px 10px 2px 10px; padding: 8px 12px; max-width: 85%;">
+                  <div style="font-size: 10px; color: #ffffff;">Khái niệm và cơ chế hoạt động của LMCache trong tối ưu hóa LLM inference?</div>
+                </div>
+
+                <!-- Assistant Msg -->
+                <div style="align-self: flex-start; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 10px 10px 10px 2px; padding: 8px 12px; max-width: 90%;">
+                  <div style="display: flex; gap: 6px; margin-bottom: 4px;">
+                    <span class="hust-badge badge-emerald" style="font-size: 8px; padding: 2px 6px;">
+                      ⚡ TTFT: 198ms (-36.3%)
+                    </span>
+                    <span class="hust-badge badge-blue" style="font-size: 8px; padding: 2px 6px;">
+                      🎯 Prefix Hit: 48 tokens
+                    </span>
+                  </div>
+                  <div style="font-size: 9.5px; color: #334155; line-height: 1.45;">
+                    LMCache hoạt động bằng cách trích xuất và chia nhỏ KV Cache của các token đầu vào thành các chunk 256 tokens, băm mã hóa và lưu vào Host RAM / Redis...
+                  </div>
+                </div>
+              </div>
+
+              <!-- Right Telemetry Panel -->
+              <div style="background: #f8fafc; border-left: 1px solid #e2e8f0; padding: 12px; display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="font-size: 9px; font-weight: 800; color: #b45309; text-transform: uppercase;">TELEMETRY HUD</span>
+                  <span style="font-size: 8px; color: #047857; background: #d1fae5; padding: 2px 6px; border-radius: 4px; font-weight: 700;">30m Poll</span>
+                </div>
+
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px;">
+                  <div style="font-size: 8px; color: #64748b; font-weight: 700;">PREFIX HIT RATIO</div>
+                  <div style="font-size: 16px; font-weight: 900; color: #047857; font-family: 'JetBrains Mono';">42.86%</div>
+                  <div style="width: 100%; height: 5px; background: #e2e8f0; border-radius: 3px; margin-top: 4px; overflow: hidden;">
+                    <div style="width: 42.86%; height: 100%; background: #059669;"></div>
+                  </div>
+                </div>
+
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px;">
+                  <div style="font-size: 8px; color: #64748b; font-weight: 700;">GPU KV POOL USAGE</div>
+                  <div style="font-size: 16px; font-weight: 900; color: #0284c7; font-family: 'JetBrains Mono';">1.32%</div>
+                  <div style="font-size: 7.5px; color: #047857; margin-top: 2px; font-weight: 700;">Tiết kiệm 98.68% VRAM</div>
+                </div>
+
+                <button style="margin-top: auto; background: #0284c7; border: none; border-radius: 6px; padding: 6px; font-size: 9px; color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer;">
+                  🔄 Làm mới số liệu
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- SLIDE 6: METRICS & DOUGHNUT (LIGHT) -->
+      <!-- ========================================== -->
+      <section data-background-image="template_assets/image3.png" data-background-size="cover">
+        <!-- Top Ribbon Header -->
+        <div class="hust-slide-header">
+          <h2 class="hust-slide-title">
+            <span>05. KẾT QUẢ ĐO ĐẠC THỰC NGHIỆM TỪ API</span>
+          </h2>
+          <img src="template_assets/image13.png" alt="HUST" class="hust-header-logo">
+        </div>
+
+        <div class="slide-body">
+          <!-- 4 KPI Cards -->
+          <div class="grid-4" style="margin-top: 5px;">
+            <div class="hust-card card-blue-top">
+              <div class="stat-label">Tổng Tokens Đo Đạc</div>
+              <div class="stat-number" style="color: #0284c7;">112</div>
+              <div style="font-size: 0.6em; color: var(--tx-muted);">Đầu vào kiểm thử</div>
+            </div>
+
+            <div class="hust-card card-emerald-top">
+              <div class="stat-label">Tokens Trúng Cache</div>
+              <div class="stat-number" style="color: #059669;">48</div>
+              <div style="font-size: 0.6em; color: #059669; font-weight: 700;">Prefix Cache Hit</div>
+            </div>
+
+            <div class="hust-card card-red-top">
+              <div class="stat-label">Tỷ Lệ Trúng Cache</div>
+              <div class="stat-number" style="color: #dc2626;">42.86%</div>
+              <div style="font-size: 0.6em; color: #dc2626; font-weight: 700;">Prefix Hit Ratio</div>
+            </div>
+
+            <div class="hust-card card-purple-top">
+              <div class="stat-label">Phiên Hội Thoại</div>
+              <div class="stat-number" style="color: #7c3aed;">21</div>
+              <div style="font-size: 0.6em; color: #7c3aed; font-weight: 700;">PostgreSQL History</div>
+            </div>
+          </div>
+
+          <!-- Doughnut Chart & JSON Explorer -->
+          <div class="grid-2" style="margin-top: 15px; align-items: center;">
+            <div class="hust-card" style="display: flex; flex-direction: column; align-items: center; padding: 12px;">
+              <div style="font-size: 0.72em; font-weight: 800; color: #334155; margin-bottom: 4px;">
+                PHÂN BỔ HIT TOKENS (48) VS COMPUTE TOKENS (64)
+              </div>
+              <div class="chart-box" style="height: 170px;">
+                <canvas id="hitRateDoughnut"></canvas>
+              </div>
+            </div>
+
+            <div class="hust-card" style="padding: 12px;">
+              <div style="font-size: 0.72em; font-weight: 800; color: #b45309; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+                <span>TRÍCH XUẤT RAW JSON TỪ /api/v1/metrics</span>
+                <span class="hust-badge badge-emerald">200 OK</span>
+              </div>
+              <pre><code class="language-json">{
+  "prefixCacheQueriesTotal": 112,
+  "prefixCacheHitsTotal": 48,
+  "prefixCacheHitRatio": 42.86,
+  "promptTokensLocalCompute": 64,
+  "promptTokensLocalCacheHit": 48,
+  "kvCacheUsagePerc": 0.0132,
+  "timeToFirstTokenAvgSeconds": 0.198
+}</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- SLIDE 7: TTFT BENCHMARK CHART (LIGHT) -->
+      <!-- ========================================== -->
+      <section data-background-image="template_assets/image3.png" data-background-size="cover">
+        <!-- Top Ribbon Header -->
+        <div class="hust-slide-header">
+          <h2 class="hust-slide-title">
+            <span>06. ĐỘ ĐO HIỆU NĂNG THEN CHỐT: RÚT NGẮN TTFT</span>
+          </h2>
+          <img src="template_assets/image13.png" alt="HUST" class="hust-header-logo">
+        </div>
+
+        <div class="slide-body">
+          <div class="grid-2" style="align-items: center; margin-top: 5px;">
+            <!-- Bar Chart Container -->
+            <div class="hust-card" style="padding: 16px;">
+              <div style="font-size: 0.72em; font-weight: 800; color: #334155; margin-bottom: 6px;">
+                SO SÁNH TTFT: COLD START VS CACHE HIT (MILI-GIÂY)
+              </div>
+              <div class="chart-box" style="height: 220px;">
+                <canvas id="ttftBarChart"></canvas>
+              </div>
+            </div>
+
+            <!-- Highlight Results Box -->
+            <div class="hust-card" style="display: flex; flex-direction: column; gap: 12px; padding: 18px;">
+              <div class="hust-badge badge-emerald" style="align-self: flex-start; font-size: 0.75em;">
+                ⚡ TỐC ĐỘ TTFT CẢI THIỆN: 36.33%
+              </div>
+
+              <!-- Metric Comparison Cards -->
+              <div style="display: flex; gap: 12px;">
+                <div style="flex: 1; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px;">
+                  <div style="font-size: 0.62em; color: #b91c1c; font-weight: 800;">COLD START TTFT</div>
+                  <div style="font-size: 1.4em; font-weight: 900; color: #dc2626; font-family: 'JetBrains Mono';">311 ms</div>
+                  <div style="font-size: 0.6em; color: #64748b;">GPU Prefill 100%</div>
+                </div>
+
+                <div style="flex: 1; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px;">
+                  <div style="font-size: 0.62em; color: #047857; font-weight: 800;">CACHE HIT TTFT</div>
+                  <div style="font-size: 1.4em; font-weight: 900; color: #059669; font-family: 'JetBrains Mono';">198 ms</div>
+                  <div style="font-size: 0.6em; color: #047857; font-weight: 700;">Nạp KV Đệm Tức Thì</div>
+                </div>
+              </div>
+
+              <div style="font-size: 0.7em; color: #334155; line-height: 1.55;">
+                • Thời gian sinh token đầu tiên lập tức <strong>giảm 113 ms</strong> đối với truy vấn ngắn 56 tokens.<br>
+                • <strong>Độ trễ toàn trình (E2E Latency):</strong> Giảm từ <strong>5.08s</strong> xuống <strong>4.69s</strong> khi giải mã trọn vẹn chuỗi 340 generation tokens.
+              </div>
+
+              <div style="background: #f0fdf4; border-left: 3px solid #059669; border-radius: 6px; padding: 8px 12px; font-size: 0.68em; color: #166534; font-weight: 600;">
+                ✓ Với prompt tài liệu dài (2,000 - 8,000 tokens), mức độ tiết kiệm TTFT đo đạc theo lý thuyết sẽ đạt trên <strong>75% - 85%</strong>!
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- SLIDE 8: LATENCY LADDER (LIGHT) -->
+      <!-- ========================================== -->
+      <section data-background-image="template_assets/image3.png" data-background-size="cover">
+        <!-- Top Ribbon Header -->
+        <div class="hust-slide-header">
+          <h2 class="hust-slide-title">
+            <span>07. THÁP SO SÁNH ĐỘ TRỄ GIỮA CÁC TẦNG LƯU TRỮ</span>
+          </h2>
+          <img src="template_assets/image13.png" alt="HUST" class="hust-header-logo">
+        </div>
+
+        <div class="slide-body">
+          <div class="hust-card" style="padding: 16px;">
+            <div style="font-size: 0.68em; font-weight: 800; color: #64748b; margin-bottom: 12px; text-transform: uppercase;">
+              THỜI GIAN TRUY XUẤT KV CACHE THEO TỪNG TẦNG (CÀNG NGẮN CÀNG TỐT)
+            </div>
+
+            <!-- Tier: Cold Recompute -->
+            <div class="latency-bar-container">
+              <div style="width: 175px; font-size: 0.7em; font-weight: 800; color: #dc2626;">
+                🔴 Cold GPU Recompute
+              </div>
+              <div class="latency-bar-track">
+                <div class="latency-bar-fill" style="width: 100%; background: #dc2626;">
+                  &gt; 1,000 ms (Nghẽn Tính Toán Prefill)
+                </div>
+              </div>
+              <div style="width: 80px; text-align: right; font-family: 'JetBrains Mono'; font-size: 0.75em; font-weight: 800; color: #dc2626;">
+                1.0x (Gốc)
+              </div>
+            </div>
+
+            <!-- Tier 1: Host CPU DRAM -->
+            <div class="latency-bar-container">
+              <div style="width: 175px; font-size: 0.7em; font-weight: 800; color: #0284c7;">
+                🟡 Tier 1: Host CPU DRAM
+              </div>
+              <div class="latency-bar-track">
+                <div class="latency-bar-fill" style="width: 20%; background: #0284c7;">
+                  ~35 ms (PCIe Gen4)
+                </div>
+              </div>
+              <div style="width: 80px; text-align: right; font-family: 'JetBrains Mono'; font-size: 0.75em; font-weight: 800; color: #0284c7;">
+                30x Nhanh
+              </div>
+            </div>
+
+            <!-- Tier 2: Remote Redis L2 -->
+            <div class="latency-bar-container">
+              <div style="width: 175px; font-size: 0.7em; font-weight: 800; color: #7c3aed;">
+                🟣 Tier 2: Remote Redis L2
+              </div>
+              <div class="latency-bar-track">
+                <div class="latency-bar-fill" style="width: 14%; background: #7c3aed;">
+                  ~20 ms (LAN 10Gbps)
+                </div>
+              </div>
+              <div style="width: 80px; text-align: right; font-family: 'JetBrains Mono'; font-size: 0.75em; font-weight: 800; color: #7c3aed;">
+                50x Nhanh
+              </div>
+            </div>
+
+            <!-- Tier 0: GPU VRAM -->
+            <div class="latency-bar-container">
+              <div style="width: 175px; font-size: 0.7em; font-weight: 800; color: #059669;">
+                🟢 Tier 0: GPU VRAM Paged
+              </div>
+              <div class="latency-bar-track">
+                <div class="latency-bar-fill" style="width: 5%; background: #059669;">
+                  &lt; 1 ms
+                </div>
+              </div>
+              <div style="width: 80px; text-align: right; font-family: 'JetBrains Mono'; font-size: 0.75em; font-weight: 800; color: #059669;">
+                1000x Nhanh
+              </div>
+            </div>
+          </div>
+
+          <div class="grid-2" style="margin-top: 15px;">
+            <div class="hust-card card-gold-top" style="padding: 12px 16px;">
+              <div style="font-size: 0.72em; font-weight: 800; color: #b45309; margin-bottom: 4px;">
+                💡 Giá Trị Thực Tiễn:
+              </div>
+              <p style="font-size: 0.68em; color: #475569; line-height: 1.5;">
+                Dù lấy dữ liệu từ DRAM (35ms) hay Redis (20ms) có chậm hơn VRAM cục bộ (&lt;1ms), nhưng nó vẫn <strong>nhanh gấp 30–50 lần</strong> so với việc bắt GPU tính toán lại phép nhân ma trận Attention.
+              </p>
+            </div>
+
+            <div class="hust-card card-blue-top" style="padding: 12px 16px;">
+              <div style="font-size: 0.72em; font-weight: 800; color: #0369a1; margin-bottom: 4px;">
+                💰 Tiết Kiệm Chi Phí Hạ Tầng:
+              </div>
+              <p style="font-size: 0.68em; color: #475569; line-height: 1.5;">
+                Giá thành 1GB RAM CPU rẻ hơn <strong>20 - 30 lần</strong> so với 1GB VRAM HBM3 trên GPU AI doanh nghiệp, cho phép mở rộng quy mô phục vụ hàng nghìn người dùng đồng thời.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- SLIDE 9: SYSTEM & UI OPTIMIZATION (LIGHT) -->
+      <!-- ========================================== -->
+      <section data-background-image="template_assets/image3.png" data-background-size="cover">
+        <!-- Top Ribbon Header -->
+        <div class="hust-slide-header">
+          <h2 class="hust-slide-title">
+            <span>08. CẢI TIẾN HỆ THỐNG & TRẢI NGHIỆM NGƯỜI DÙNG</span>
+          </h2>
+          <img src="template_assets/image13.png" alt="HUST" class="hust-header-logo">
+        </div>
+
+        <div class="slide-body">
+          <div class="grid-3" style="margin-top: 10px;">
+            <!-- Card 1 -->
+            <div class="hust-card card-emerald-top">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                <span style="font-size: 1.5em;">⏱️</span>
+                <span class="hust-badge badge-emerald">-99.3% REQ</span>
+              </div>
+              <h3 style="font-size: 0.9em; margin-bottom: 6px; font-weight: 800;">Polling 30 Phút</h3>
+              <p style="font-size: 0.68em; color: #475569; line-height: 1.55;">
+                • Thay thế polling 10s-12s thành <strong>30 phút/lần</strong>.<br>
+                • Triệt tiêu hoàn toàn nghẽn mạng ngrok.<br>
+                • Bổ sung nút <strong>Làm mới thủ công</strong> tức thì khi người dùng muốn.
+              </p>
+            </div>
+
+            <!-- Card 2 -->
+            <div class="hust-card card-blue-top">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                <span style="font-size: 1.5em;">✨</span>
+                <span class="hust-badge badge-blue">MINIMAL UI</span>
+              </div>
+              <h3 style="font-size: 0.9em; margin-bottom: 6px; font-weight: 800;">Tinh Gọn Header</h3>
+              <p style="font-size: 0.68em; color: #475569; line-height: 1.55;">
+                • Bỏ các chữ thừa gần logo.<br>
+                • Chuyển chọn model vào modal Cài đặt.<br>
+                • Loại bỏ badge Hit Ratio trùng lặp.<br>
+                • Không gian chat rộng rãi, hiện đại.
+              </p>
+            </div>
+
+            <!-- Card 3 -->
+            <div class="hust-card card-red-top">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                <span style="font-size: 1.5em;">🗑️</span>
+                <span class="hust-badge badge-red">INTUITIVE UX</span>
+              </div>
+              <h3 style="font-size: 0.9em; margin-bottom: 6px; font-weight: 800;">Quản Lý Xóa Chat</h3>
+              <p style="font-size: 0.68em; color: #475569; line-height: 1.55;">
+                • Đưa chức năng xóa về <strong>Sidebar Lịch sử</strong>.<br>
+                • Hover phiên chat để xóa từng hội thoại.<br>
+                • Hỗ trợ xóa toàn bộ với hộp thoại xác nhận an toàn.
+              </p>
+            </div>
+          </div>
+
+          <!-- Before / After Banner -->
+          <div class="hust-card" style="margin-top: 15px; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; background: #f8fafc;">
+            <div style="font-size: 0.72em; color: #dc2626; font-weight: 700;">
+              ❌ Trước tối ưu: Call API liên tục 12s gây nghẽn, Header rối rắm, nút xóa lạc chỗ
+            </div>
+            <div style="font-size: 1.1em; color: #059669; font-weight: 900;">➔</div>
+            <div style="font-size: 0.72em; color: #047857; font-weight: 800;">
+              ✅ Sau tối ưu: Chu kỳ 30m + Reload thủ công, Header tối giản, Sidebar tiện ích
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- SLIDE 10: CONCLUSION & Q&A (HUST CLOSING) -->
+      <!-- ========================================== -->
+      <section data-background-image="template_assets/image12.png" data-background-size="cover">
+        <div style="text-align: center; max-width: 920px; margin: 0 auto; color: #ffffff;">
+          
+          <!-- HUST Logo in clean white container -->
+          <div style="margin-bottom: 20px;">
+            <img src="template_assets/image13.png" alt="HUST Logo" style="height: 65px; background: #ffffff; padding: 6px 20px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
+          </div>
+
+          <h2 style="font-size: 2.1em; font-weight: 900; color: #ffffff; margin-bottom: 15px; text-shadow: 0 4px 12px rgba(0,0,0,0.4);">
+            XIN TRÂN TRỌNG CẢM ƠN!
+          </h2>
+
+          <p style="font-size: 0.85em; color: #fde68a; font-weight: 700; margin-bottom: 25px;">
+            ĐỀ TÀI: TỐI ƯU HÓA SUY LUẬN LLM VỚI LMCACHE & PREFIX CACHING
+          </p>
+
+          <!-- 2 Summary Cards -->
+          <div class="grid-2" style="text-align: left; margin-bottom: 25px;">
+            <div style="background: rgba(255, 255, 255, 0.95); border-radius: 12px; padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.25);">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span style="font-size: 1.2em;">🏆</span>
+                <span style="font-weight: 800; font-size: 0.85em; color: #047857;">Kết Quả Đạt Được</span>
+              </div>
+              <ul style="font-size: 0.68em; color: #334155; line-height: 1.6; padding-left: 18px; margin: 0;">
+                <li>Xây dựng hoàn chỉnh kiến trúc <strong>vLLM Engine + LMCache Multi-Tier</strong>.</li>
+                <li>Chứng minh thực nghiệm giảm <strong>36.33% TTFT</strong> và đạt <strong>42.86% Cache Hit</strong>.</li>
+                <li>Giao diện giám sát trực quan, tiết kiệm 99.3% lưu lượng mạng polling.</li>
+              </ul>
+            </div>
+
+            <div style="background: rgba(255, 255, 255, 0.95); border-radius: 12px; padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.25);">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span style="font-size: 1.2em;">🚀</span>
+                <span style="font-weight: 800; font-size: 0.85em; color: #b45309;">Định Hướng Tương Lai</span>
+              </div>
+              <ul style="font-size: 0.68em; color: #334155; line-height: 1.6; padding-left: 18px; margin: 0;">
+                <li>Nghiên cứu áp dụng nén tensor KV SerDe <code>cachegen</code> trên cụm Redis L2.</li>
+                <li>Thử nghiệm mở rộng trên mô hình lớn hơn (Qwen-7B, LLaMA-3-8B).</li>
+                <li>Nghiên cứu Semantic Cosine Embedding Matching kết hợp Prefix Caching.</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Q&A Invitation Banner -->
+          <div style="display: inline-block; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.3); padding: 8px 30px; border-radius: 9999px; font-size: 0.8em; font-weight: 800; color: #fde68a;">
+            PHIÊN THẢO LUẬN & HỎI ĐÁP (Q&A SESSION)
+          </div>
+
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- Reveal.js & Plugins Scripts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/reveal.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/plugin/notes/notes.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/plugin/markdown/markdown.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/plugin/highlight/highlight.min.js"></script>
+
+  <script>
+    // Initialize Reveal.js
+    Reveal.initialize({
+      hash: true,
+      slideNumber: 'c/t',
+      controls: true,
+      progress: true,
+      center: true,
+      transition: 'slide',
+      backgroundTransition: 'fade',
+      plugins: [ RevealHighlight, RevealNotes ]
+    });
+
+    // Chart.js Instances (Light Theme)
+    let doughnutChartInstance = null;
+    let barChartInstance = null;
+
+    function initCharts() {
+      // 1. Doughnut Chart: Hit vs Compute Tokens (Light Theme)
+      const doughnutCtx = document.getElementById('hitRateDoughnut');
+      if (doughnutCtx && !doughnutChartInstance) {
+        doughnutChartInstance = new Chart(doughnutCtx, {
+          type: 'doughnut',
+          data: {
+            labels: ['Cache Hit (48 Tok)', 'Local Compute (64 Tok)'],
+            datasets: [{
+              data: [48, 64],
+              backgroundColor: ['#059669', '#dc2626'],
+              borderColor: '#ffffff',
+              borderWidth: 3,
+              hoverOffset: 6
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '70%',
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: {
+                  color: '#334155',
+                  font: { family: 'Lato', size: 10, weight: 'bold' },
+                  padding: 10
+                }
+              }
+            }
+          }
+        });
+      }
+
+      // 2. Bar Chart: TTFT Comparison (Light Theme)
+      const barCtx = document.getElementById('ttftBarChart');
+      if (barCtx && !barChartInstance) {
+        barChartInstance = new Chart(barCtx, {
+          type: 'bar',
+          data: {
+            labels: ['Cold Start Prefill', 'Cache Hit (LMCache)'],
+            datasets: [{
+              label: 'TTFT (ms)',
+              data: [311, 198],
+              backgroundColor: [
+                '#dc2626',
+                '#059669'
+              ],
+              borderColor: [
+                '#b91c1c',
+                '#047857'
+              ],
+              borderWidth: 1,
+              borderRadius: 8,
+              borderSkipped: false
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              y: {
+                beginAtZero: true,
+                max: 360,
+                ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 10 } },
+                grid: { color: 'rgba(226, 232, 240, 0.8)' }
+              },
+              x: {
+                ticks: { color: '#0f172a', font: { family: 'Lato', size: 11, weight: 'bold' } },
+                grid: { display: false }
+              }
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    return ` ${context.raw} ms`;
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+    }
+
+    Reveal.on('ready', () => {
+      initCharts();
+    });
+
+    Reveal.on('slidechanged', () => {
+      initCharts();
+    });
+  </script>
+</body>
+</html>

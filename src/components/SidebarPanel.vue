@@ -21,6 +21,7 @@ import {
   User,
   Zap,
   Sparkles,
+  RefreshCw,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -56,6 +57,26 @@ function saveRename(id: string) {
 function cancelRename() {
   editingSessionId.value = null
 }
+
+function handleDeleteSession(id: string) {
+  const sess = chatStore.sessions.find(s => s.id === id)
+  const confirmMsg = langStore.locale === 'vi'
+    ? `Xóa cuộc trò chuyện "${sess?.title || 'này'}"?`
+    : 'Delete this chat?'
+  if (confirm(confirmMsg)) {
+    chatStore.deleteSession(id)
+  }
+}
+
+function handleClearAllChats() {
+  const confirmMsg = langStore.locale === 'vi'
+    ? 'Bạn có chắc chắn muốn xóa tất cả cuộc trò chuyện trong lịch sử?'
+    : 'Are you sure you want to delete all chats?'
+  if (confirm(confirmMsg)) {
+    chatStore.sessions = []
+    chatStore.createNewSession()
+  }
+}
 </script>
 
 <template>
@@ -70,17 +91,14 @@ function cancelRename() {
         <router-link
           to="/about"
           class="flex items-center gap-2.5 hover:opacity-90 transition-opacity cursor-pointer"
-          v-tooltip.bottom="langStore.locale === 'vi' ? 'Xem thông tin đề tài HUST SOICT' : 'View HUST SOICT thesis overview'"
+          v-tooltip.bottom="langStore.locale === 'vi' ? 'Xem thông tin đề tài LLM-HUST' : 'View LLM-HUST thesis overview'"
         >
           <!-- Custom SVG Emblem Logo -->
-          <img src="/favicon.svg" alt="LLM-HUST Cache Logo" class="w-7 h-7 shadow-xs shrink-0 object-contain" />
+          <img src="/favicon.svg" alt="LLM-HUST Logo" class="w-7 h-7 shadow-xs shrink-0 object-contain" />
           <div>
-            <h1 class="font-extrabold text-xs tracking-wide text-tx-p flex items-center gap-1.5">
-              LLM-HUST <span class="text-[9px] text-hust-gold px-1.5 py-0.5 rounded-full bg-hust-gold/10 border border-hust-gold/20 font-bold">SOICT</span>
+            <h1 class="font-extrabold text-sm tracking-wide text-tx-p flex items-center">
+              LLM-HUST
             </h1>
-            <p class="text-[9px] text-tx-s">
-              {{ langStore.locale === 'vi' ? 'Đề tài tối ưu hóa Cache' : 'LLM Cache Optimization' }}
-            </p>
           </div>
         </router-link>
 
@@ -153,9 +171,27 @@ function cancelRename() {
       class="flex-1 overflow-y-auto p-2"
       :class="props.collapsed ? 'space-y-3 flex flex-col items-center' : 'space-y-1'"
     >
-      <div v-if="!props.collapsed" class="px-2 py-1.5 text-[9px] font-bold text-tx-m tracking-wider uppercase flex items-center justify-between">
+      <div v-if="!props.collapsed" class="px-2 py-1.5 text-[10px] font-bold text-tx-m tracking-wider uppercase flex items-center justify-between">
         <span>{{ langStore.t('recentChats') }}</span>
-        <span class="text-tx-s font-mono">({{ chatStore.filteredSessions.length }})</span>
+        <div class="flex items-center gap-1.5">
+          <span class="text-tx-s font-mono text-[9px]">({{ chatStore.filteredSessions.length }})</span>
+          <button
+            class="text-tx-s hover:text-hust-gold p-1 rounded-md hover:bg-bg-btn-hover transition-colors cursor-pointer"
+            v-tooltip.bottom="langStore.locale === 'vi' ? 'Đồng bộ lịch sử máy chủ' : 'Sync server history'"
+            :disabled="chatStore.isSyncingHistory"
+            @click="chatStore.syncHistoryFromBackend()"
+          >
+            <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': chatStore.isSyncingHistory }" />
+          </button>
+          <button
+            v-if="chatStore.sessions.length > 0"
+            class="text-tx-s hover:text-rose-400 p-1 rounded-md hover:bg-bg-btn-hover transition-colors cursor-pointer"
+            v-tooltip.bottom="langStore.locale === 'vi' ? 'Xóa tất cả cuộc trò chuyện' : 'Clear all chats'"
+            @click="handleClearAllChats"
+          >
+            <Trash2 class="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       <div v-if="chatStore.filteredSessions.length === 0 && !props.collapsed" class="p-4 text-center text-xs text-tx-m border border-dashed border-border-p rounded-xl">
@@ -203,19 +239,19 @@ function cancelRename() {
           <!-- Hover Action Controls -->
           <div 
             v-if="editingSessionId !== sess.id"
-            class="absolute right-2 opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity"
+            class="absolute right-2 opacity-80 md:opacity-0 md:group-hover:opacity-100 flex items-center gap-1 transition-opacity"
           >
             <button 
-              class="text-tx-s hover:text-tx-p p-1 cursor-pointer"
+              class="text-tx-s hover:text-tx-p p-1 rounded hover:bg-bg-btn-hover cursor-pointer"
               v-tooltip.bottom="langStore.locale === 'vi' ? 'Đổi tên' : 'Rename'"
               @click.stop="startRename(sess.id, sess.title)"
             >
               <Pencil class="w-3 h-3" />
             </button>
             <button 
-              class="text-tx-s hover:text-rose-400 p-1 cursor-pointer"
-              v-tooltip.bottom="langStore.locale === 'vi' ? 'Xóa' : 'Delete'"
-              @click.stop="chatStore.deleteSession(sess.id)"
+              class="text-tx-s hover:text-rose-400 p-1 rounded hover:bg-bg-btn-hover cursor-pointer"
+              v-tooltip.bottom="langStore.locale === 'vi' ? 'Xóa cuộc trò chuyện' : 'Delete chat'"
+              @click.stop="handleDeleteSession(sess.id)"
             >
               <Trash2 class="w-3 h-3" />
             </button>

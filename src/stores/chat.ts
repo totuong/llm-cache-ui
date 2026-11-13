@@ -1,11 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useCacheStore } from './cache'
+import { useAuthStore } from './auth'
 import {
   checkBackendHealth,
   streamChatRequest,
   sendChatRequest,
   fetchChatHistory,
+  fetchMyChatHistory,
 } from '../services/apiService'
 import type { VllmMetricsDTO, UsageInfo, ChatHistory } from '../types/api'
 
@@ -185,10 +187,11 @@ export const useChatStore = defineStore('chat', () => {
     createNewSession()
   }
 
-  // Check health on store initialization
-  checkHealth()
-
   async function checkHealth(): Promise<boolean> {
+    if (cacheStore.isBackendLive) {
+      isBackendLive.value = true
+      return true
+    }
     const alive = await checkBackendHealth()
     isBackendLive.value = alive
     return alive
@@ -227,16 +230,24 @@ export const useChatStore = defineStore('chat', () => {
 
   /**
    * Sync chat history stored in PostgreSQL database into Pinia store sessions
+   * Uses /api/v1/chat/history/me for logged-in user or /api/v1/chat/history?limit=50 for guest/admin
    */
   async function syncHistoryFromBackend(): Promise<number> {
     isSyncingHistory.value = true
     try {
-      const histories: ChatHistory[] = await fetchChatHistory(50)
+      const authStore = useAuthStore()
+      const histories: ChatHistory[] = authStore.isLoggedIn
+        ? await fetchMyChatHistory()
+        : await fetchChatHistory(50)
+
       if (histories && histories.length > 0) {
         const dbSessionId = 'session_postgres_history'
         let dbSess = sessions.value.find(s => s.id === dbSessionId)
 
-        const mappedMessages: Message[] = histories.flatMap(h => [
+        // API returns createdAt DESC; reverse to order chronologically in conversation
+        const chronological = [...histories].reverse()
+
+        const mappedMessages: Message[] = chronological.flatMap(h => [
           {
             id: `msg_pg_${h.id}_u`,
             sender: 'user',
@@ -250,7 +261,7 @@ export const useChatStore = defineStore('chat', () => {
             content: h.response,
             timestamp: h.createdAt || new Date().toISOString(),
             cacheStatus: {
-              hit: (h.cacheHitRatioPercentage || 0) > 50,
+              hit: (h.cacheHitRatioPercentage || 0) > 50 || (h.cachedTokens || 0) > 0,
               latency: parseFloat(((h.executionTimeMs || 300) / 1000).toFixed(2)),
               tokens: h.totalTokens || 100,
               executionTimeMs: h.executionTimeMs,
@@ -266,16 +277,21 @@ export const useChatStore = defineStore('chat', () => {
           },
         ])
 
+        const sessionTitle = authStore.isLoggedIn
+          ? `Lịch sử của ${authStore.username || 'tôi'}`
+          : 'Lịch sử PostgreSQL (DB)'
+
         if (!dbSess) {
           dbSess = {
             id: dbSessionId,
-            title: 'Lịch sử PostgreSQL (DB)',
+            title: sessionTitle,
             messages: mappedMessages,
             modelId: selectedModelId.value,
             createdAt: new Date().toISOString(),
           }
           sessions.value.unshift(dbSess)
         } else {
+          dbSess.title = sessionTitle
           dbSess.messages = mappedMessages
         }
 
@@ -285,8 +301,8 @@ export const useChatStore = defineStore('chat', () => {
       }
       return 0
     } catch (err) {
-      console.warn('Could not sync history from PostgreSQL:', err)
-      throw err
+      console.warn('Could not sync history from backend:', err)
+      return 0
     } finally {
       isSyncingHistory.value = false
     }
@@ -323,10 +339,28 @@ export const useChatStore = defineStore('chat', () => {
   async function sendMessage(content: string) {
     if (!content.trim() || isTyping.value || !activeSession.value) return
 
+    const authStore = useAuthStore()
     const currentSession = activeSession.value
     const userPrompt = content.trim()
 
-    // 1. Create User Message
+    // 1. Check Authentication
+    if (!authStore.isLoggedIn) {
+      authStore.isAuthModalOpen = true
+      const authRequiredMsg: Message = {
+        id: 'msg_' + Date.now().toString(36) + '_a',
+        sender: 'assistant',
+        content: '',
+        isError: true,
+        errorMessage: 'Vui lòng đăng nhập tài khoản để gửi tin nhắn đến hệ thống LLM.',
+        timestamp: new Date().toISOString(),
+        cacheStatus: null,
+      }
+      currentSession.messages.push(authRequiredMsg)
+      saveToStorage()
+      return
+    }
+
+    // 2. Create User Message
     const userMsg: Message = {
       id: 'msg_' + Date.now().toString(36) + '_u',
       sender: 'user',
@@ -356,54 +390,108 @@ export const useChatStore = defineStore('chat', () => {
     }
     currentSession.messages.push(assistantMsg)
 
-    // Directly call Spring Boot Chat API (/api/v1/chat or /chat)
+    // Directly call Spring Boot Chat API (/api/v1/chat or /api/v1/chat/stream)
     const startTime = Date.now()
+    const validModel = (selectedModelId.value && selectedModelId.value.includes('Qwen'))
+      ? selectedModelId.value
+      : 'Qwen/Qwen2.5-1.5B-Instruct'
+    selectedModelId.value = validModel
+
     try {
-      const validModel = (selectedModelId.value && selectedModelId.value.includes('Qwen'))
-        ? selectedModelId.value
-        : 'Qwen/Qwen2.5-1.5B-Instruct'
-      selectedModelId.value = validModel
+      let hasStreamed = false
 
-      const res = await sendChatRequest({
-        prompt: userPrompt,
-        model: validModel,
-      })
-
-      isBackendLive.value = true
-
-      const msgIndex = currentSession.messages.findIndex(m => m.id === assistantMsgId)
-      const totalMs = res.executionTimeMs || (Date.now() - startTime)
-      const rawHitRatio = res.usage?.cacheHitRatioPercentage ?? res.vllmMetrics?.prefixCacheHitRatio ?? 0
-      const hitRatio = rawHitRatio <= 1 && rawHitRatio > 0 ? rawHitRatio * 100 : rawHitRatio
-
-      const updatedMsg: Message = {
-        id: assistantMsgId,
-        sender: 'assistant',
-        content: res.response,
-        timestamp: new Date().toISOString(),
-        cacheStatus: {
-          hit: hitRatio > 50 || (res.usage?.cachedTokens ?? 0) > 0,
-          latency: parseFloat((totalMs / 1000).toFixed(2)),
-          tokens: res.usage?.totalTokens || Math.round(res.response.length / 4) + 10,
-          executionTimeMs: totalMs,
-          cacheHitRatioPercentage: hitRatio,
-          usage: res.usage,
-          vllmMetrics: res.vllmMetrics,
+      await streamChatRequest(
+        {
+          prompt: userPrompt,
+          model: validModel,
         },
-      }
+        (chunkText) => {
+          hasStreamed = true
+          isBackendLive.value = true
+          const msgIndex = currentSession.messages.findIndex(m => m.id === assistantMsgId)
+          if (msgIndex !== -1 && currentSession.messages[msgIndex]) {
+            currentSession.messages[msgIndex].content += chunkText
+          }
+        },
+        (finalMetadata) => {
+          isBackendLive.value = true
+          isTyping.value = false
+          const msgIndex = currentSession.messages.findIndex(m => m.id === assistantMsgId)
+          const targetMsg = msgIndex !== -1 ? currentSession.messages[msgIndex] : null
+          const totalMs = finalMetadata?.executionTimeMs || (Date.now() - startTime)
+          const rawHitRatio = finalMetadata?.usage?.cacheHitRatioPercentage ?? finalMetadata?.vllmMetrics?.prefixCacheHitRatio ?? 0
+          const hitRatio = rawHitRatio <= 1 && rawHitRatio > 0 ? rawHitRatio * 100 : rawHitRatio
 
-      if (msgIndex !== -1) {
-        currentSession.messages[msgIndex] = updatedMsg
-      } else {
-        currentSession.messages.push(updatedMsg)
-      }
+          if (targetMsg) {
+            targetMsg.cacheStatus = {
+              hit: hitRatio > 50 || (finalMetadata?.usage?.cachedTokens ?? 0) > 0,
+              latency: parseFloat((totalMs / 1000).toFixed(2)),
+              tokens: finalMetadata?.usage?.totalTokens || Math.round((targetMsg.content.length) / 4) + 10,
+              executionTimeMs: totalMs,
+              cacheHitRatioPercentage: hitRatio,
+              usage: finalMetadata?.usage,
+              vllmMetrics: finalMetadata?.vllmMetrics,
+            }
+          }
 
-      isTyping.value = false
-      cacheStore.refreshBackendMetrics()
-      saveToStorage()
-      return
+          cacheStore.refreshBackendMetrics()
+          saveToStorage()
+        },
+        async (streamErr) => {
+          // If streaming failed before any chunks were received, fall back to synchronous sendChatRequest
+          if (!hasStreamed) {
+            try {
+              const res = await sendChatRequest({
+                prompt: userPrompt,
+                model: validModel,
+              })
+
+              isBackendLive.value = true
+              isTyping.value = false
+
+              const msgIndex = currentSession.messages.findIndex(m => m.id === assistantMsgId)
+              const totalMs = res.executionTimeMs || (Date.now() - startTime)
+              const rawHitRatio = res.usage?.cacheHitRatioPercentage ?? res.vllmMetrics?.prefixCacheHitRatio ?? 0
+              const hitRatio = rawHitRatio <= 1 && rawHitRatio > 0 ? rawHitRatio * 100 : rawHitRatio
+
+              const updatedMsg: Message = {
+                id: assistantMsgId,
+                sender: 'assistant',
+                content: res.response,
+                timestamp: new Date().toISOString(),
+                cacheStatus: {
+                  hit: hitRatio > 50 || (res.usage?.cachedTokens ?? 0) > 0,
+                  latency: parseFloat((totalMs / 1000).toFixed(2)),
+                  tokens: res.usage?.totalTokens || Math.round(res.response.length / 4) + 10,
+                  executionTimeMs: totalMs,
+                  cacheHitRatioPercentage: hitRatio,
+                  usage: res.usage,
+                  vllmMetrics: res.vllmMetrics,
+                },
+              }
+
+              if (msgIndex !== -1) {
+                currentSession.messages[msgIndex] = updatedMsg
+              } else {
+                currentSession.messages.push(updatedMsg)
+              }
+
+              cacheStore.refreshBackendMetrics()
+              saveToStorage()
+            } catch (fallbackErr: any) {
+              handleError(fallbackErr)
+            }
+          } else {
+            handleError(streamErr)
+          }
+        }
+      )
     } catch (err: any) {
-      console.warn('Real chat API error:', err)
+      handleError(err)
+    }
+
+    function handleError(err: any) {
+      console.warn('Chat API error:', err)
       isBackendLive.value = false
       isTyping.value = false
 
@@ -428,6 +516,12 @@ export const useChatStore = defineStore('chat', () => {
 
   async function retryMessage(assistantMsgId: string) {
     if (!activeSession.value || isTyping.value) return
+    const authStore = useAuthStore()
+    if (!authStore.isLoggedIn) {
+      authStore.isAuthModalOpen = true
+      return
+    }
+
     const currentSession = activeSession.value
     const msgIndex = currentSession.messages.findIndex(m => m.id === assistantMsgId)
     if (msgIndex === -1) return
@@ -435,18 +529,22 @@ export const useChatStore = defineStore('chat', () => {
     // Find preceding user message
     let userPrompt = ''
     for (let i = msgIndex - 1; i >= 0; i--) {
-      if (currentSession.messages[i].sender === 'user') {
-        userPrompt = currentSession.messages[i].content
+      const prevMsg = currentSession.messages[i]
+      if (prevMsg && prevMsg.sender === 'user') {
+        userPrompt = prevMsg.content
         break
       }
     }
     if (!userPrompt) return
 
+    const targetMsg = currentSession.messages[msgIndex]
+    if (!targetMsg) return
+
     isTyping.value = true
-    currentSession.messages[msgIndex].isError = false
-    currentSession.messages[msgIndex].errorMessage = undefined
-    currentSession.messages[msgIndex].content = ''
-    currentSession.messages[msgIndex].cacheStatus = null
+    targetMsg.isError = false
+    targetMsg.errorMessage = undefined
+    targetMsg.content = ''
+    targetMsg.cacheStatus = null
 
     const startTime = Date.now()
     try {
@@ -514,18 +612,16 @@ export const useChatStore = defineStore('chat', () => {
     if (cacheResult && cacheResult.hit) {
       setTimeout(() => {
         const msgIndex = currentSession.messages.findIndex(m => m.id === assistantMsgId)
-        if (msgIndex !== -1) {
-          currentSession.messages[msgIndex] = {
-            ...currentSession.messages[msgIndex],
-            content: cacheResult.response,
-            cacheStatus: {
-              hit: true,
-              similarity: cacheResult.similarity,
-              latency: cacheResult.latency,
-              tokens: Math.round(cacheResult.response.length / 4) + 10,
-              cacheHitRatioPercentage: 85.5,
-              executionTimeMs: Math.round(cacheResult.latency * 1000),
-            },
+        const targetMsg = msgIndex !== -1 ? currentSession.messages[msgIndex] : undefined
+        if (targetMsg) {
+          targetMsg.content = cacheResult.response
+          targetMsg.cacheStatus = {
+            hit: true,
+            similarity: cacheResult.similarity,
+            latency: cacheResult.latency,
+            tokens: Math.round(cacheResult.response.length / 4) + 10,
+            cacheHitRatioPercentage: 85.5,
+            executionTimeMs: Math.round(cacheResult.latency * 1000),
           }
         }
         isTyping.value = false
@@ -549,19 +645,20 @@ export const useChatStore = defineStore('chat', () => {
 
       const streamTimer = setInterval(() => {
         const msgIndex = currentSession.messages.findIndex(m => m.id === assistantMsgId)
-        if (msgIndex === -1) {
+        const targetMsg = msgIndex !== -1 ? currentSession.messages[msgIndex] : undefined
+        if (!targetMsg) {
           clearInterval(streamTimer)
           return
         }
 
         if (currentWordIndex < words.length) {
-          const currentContent = currentSession.messages[msgIndex].content
+          const currentContent = targetMsg.content
           const newChunk = (currentWordIndex === 0 ? '' : ' ') + words[currentWordIndex]
-          currentSession.messages[msgIndex].content = currentContent + newChunk
+          targetMsg.content = currentContent + newChunk
           currentWordIndex++
         } else {
           clearInterval(streamTimer)
-          currentSession.messages[msgIndex].cacheStatus = {
+          targetMsg.cacheStatus = {
             hit: false,
             latency: originalLatency,
             tokens: totalTokens,

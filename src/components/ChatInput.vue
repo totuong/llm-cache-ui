@@ -109,19 +109,23 @@ onMounted(() => {
             </button>
           </div>
 
-          <!-- Right side: char count and send button -->
-          <div class="flex items-center gap-2">
+          <!-- Right side: char count, keyboard hint and send button -->
+          <div class="flex items-center gap-2.5">
+            <span class="text-[9px] text-tx-m font-mono select-none hidden sm:inline">
+              Enter để gửi • Shift+Enter xuống dòng
+            </span>
             <span v-if="textContent.length > 0" class="text-[9px] text-tx-m font-mono select-none">
               {{ textContent.length }} {{ langStore.locale === 'vi' ? 'ký tự' : 'chars' }}
             </span>
             
             <button
-              class="w-8 h-8 rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-xs"
+              class="w-8 h-8 rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-95"
               :class="[
                 textContent.trim() && !props.disabled
                   ? 'bg-hust-red hover:bg-hust-red-hover text-white shadow-xs'
                   : 'bg-bg-btn-hover text-tx-m cursor-not-allowed'
               ]"
+              v-tooltip.top="textContent.trim() && !props.disabled ? 'Gửi tin nhắn' : ''"
               :disabled="!textContent.trim() || props.disabled"
               @click="submit"
             >

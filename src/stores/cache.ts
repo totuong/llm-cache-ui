@@ -44,6 +44,9 @@ export interface L2StorageConfig {
   lastTestedAt?: string
 }
 
+// Standard auto-refresh interval requested: 30 minutes
+export const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000 // 1,800,000 ms
+
 export const useCacheStore = defineStore('cache', () => {
   // Local Settings
   const enabled = ref<boolean>(true)
@@ -82,6 +85,7 @@ export const useCacheStore = defineStore('cache', () => {
   const dbChatHistory = ref<ChatHistory[]>([])
   const isBackendLive = ref<boolean>(false)
   const isFetchingBackend = ref<boolean>(false)
+  const lastUpdated = ref<Date | null>(null)
 
   // Local Cache database (Tracks locally cached prompts)
   const cacheItems = ref<CacheItem[]>([])
@@ -324,63 +328,79 @@ export const useCacheStore = defineStore('cache', () => {
   }
 
   let lastFetchTime = 0
+  let inFlightPromise: Promise<void> | null = null
 
   /**
    * Refresh metrics from Spring Boot Backend (/api/v1/cache, /api/v1/metrics, /api/v1/system)
-   * Throttled to max 1 call per 4 seconds unless forced.
+   * Deduplicates concurrent calls via inFlightPromise and throttles to max 1 call per 4 seconds.
    */
-  async function refreshBackendMetrics(force: boolean = false) {
+  async function refreshBackendMetrics(force: boolean = false): Promise<void> {
+    // 1. If a refresh is already currently in progress, return the existing in-flight Promise
+    if (inFlightPromise) {
+      return inFlightPromise
+    }
+
+    // 2. Cooldown check (skip if called within 4s unless force is true)
     const now = Date.now()
-    if (!force && now - lastFetchTime < 4000) return
+    if (!force && now - lastFetchTime < 4000) {
+      return
+    }
     lastFetchTime = now
 
     isFetchingBackend.value = true
-    try {
-      const [cStats, vMetrics, sysStatus, historyRes, l2Res] = await Promise.allSettled([
-        fetchCacheStats(),
-        fetchVllmMetrics(),
-        fetchSystemStatus(),
-        fetchChatHistory(50),
-        fetchL2Config(),
-      ])
 
-      const isLive = sysStatus.status === 'fulfilled' || cStats.status === 'fulfilled' || l2Res.status === 'fulfilled'
-      isBackendLive.value = isLive
+    inFlightPromise = (async () => {
+      try {
+        const [cStats, vMetrics, sysStatus, historyRes, l2Res] = await Promise.allSettled([
+          fetchCacheStats(),
+          fetchVllmMetrics(),
+          fetchSystemStatus(),
+          fetchChatHistory(50),
+          fetchL2Config(),
+        ])
 
-      if (cStats.status === 'fulfilled') backendStats.value = cStats.value
-      if (vMetrics.status === 'fulfilled') vllmMetrics.value = vMetrics.value
-      if (sysStatus.status === 'fulfilled') systemStatus.value = sysStatus.value
-      if (historyRes.status === 'fulfilled' && Array.isArray(historyRes.value)) {
-        dbChatHistory.value = historyRes.value
-      }
+        const isLive = sysStatus.status === 'fulfilled' || cStats.status === 'fulfilled' || l2Res.status === 'fulfilled'
+        isBackendLive.value = isLive
+        lastUpdated.value = new Date()
 
-      // If backend stats available, sync hitRate & totals directly from API (including 0)
-      if (backendStats.value) {
-        if (backendStats.value.prefixCacheQueriesTotal !== undefined && backendStats.value.prefixCacheQueriesTotal !== null) {
-          stats.value.totalRequests = backendStats.value.prefixCacheQueriesTotal
-          stats.value.hits = backendStats.value.prefixCacheHitsTotal ?? 0
-          stats.value.misses = Math.max(0, backendStats.value.prefixCacheQueriesTotal - stats.value.hits)
+        if (cStats.status === 'fulfilled') backendStats.value = cStats.value
+        if (vMetrics.status === 'fulfilled') vllmMetrics.value = vMetrics.value
+        if (sysStatus.status === 'fulfilled') systemStatus.value = sysStatus.value
+        if (historyRes.status === 'fulfilled' && Array.isArray(historyRes.value)) {
+          dbChatHistory.value = historyRes.value
         }
 
-        const savedTokens = backendStats.value.totalCachedTokensSaved ?? backendStats.value.promptTokensLocalCacheHit ?? 0
-        stats.value.totalTokensSaved = savedTokens
-        stats.value.totalCostSaved = parseFloat((savedTokens * 0.00002).toFixed(5))
+        // If backend stats available, sync hitRate & totals directly from API (including 0)
+        if (backendStats.value) {
+          if (backendStats.value.prefixCacheQueriesTotal !== undefined && backendStats.value.prefixCacheQueriesTotal !== null) {
+            stats.value.totalRequests = backendStats.value.prefixCacheQueriesTotal
+            stats.value.hits = backendStats.value.prefixCacheHitsTotal ?? 0
+            stats.value.misses = Math.max(0, backendStats.value.prefixCacheQueriesTotal - stats.value.hits)
+          }
 
-        // Time saved: If 0 hits, then time saved is strictly 0s (no mock numbers)
-        if (stats.value.hits === 0) {
-          stats.value.totalTimeSaved = 0
-        } else {
-          const avgColdPrefill = (vllmMetrics.value?.e2eLatencyAvgSeconds && vllmMetrics.value.e2eLatencyAvgSeconds > 0)
-            ? Math.max(0.15, vllmMetrics.value.e2eLatencyAvgSeconds - (vllmMetrics.value.timeToFirstTokenAvgSeconds || 0.05))
-            : 0.85
-          stats.value.totalTimeSaved = parseFloat((stats.value.hits * avgColdPrefill).toFixed(2))
+          const savedTokens = backendStats.value.totalCachedTokensSaved ?? backendStats.value.promptTokensLocalCacheHit ?? 0
+          stats.value.totalTokensSaved = savedTokens
+          stats.value.totalCostSaved = parseFloat((savedTokens * 0.00002).toFixed(5))
+
+          // Time saved: If 0 hits, then time saved is strictly 0s (no mock numbers)
+          if (stats.value.hits === 0) {
+            stats.value.totalTimeSaved = 0
+          } else {
+            const avgColdPrefill = (vllmMetrics.value?.e2eLatencyAvgSeconds && vllmMetrics.value.e2eLatencyAvgSeconds > 0)
+              ? Math.max(0.15, vllmMetrics.value.e2eLatencyAvgSeconds - (vllmMetrics.value.timeToFirstTokenAvgSeconds || 0.05))
+              : 0.85
+            stats.value.totalTimeSaved = parseFloat((stats.value.hits * avgColdPrefill).toFixed(2))
+          }
         }
+      } catch (err) {
+        console.warn('Could not refresh backend metrics:', err)
+      } finally {
+        isFetchingBackend.value = false
+        inFlightPromise = null
       }
-    } catch (err) {
-      console.warn('Could not refresh backend metrics:', err)
-    } finally {
-      isFetchingBackend.value = false
-    }
+    })()
+
+    return inFlightPromise
   }
 
   /**
@@ -554,6 +574,11 @@ export const useCacheStore = defineStore('cache', () => {
     return getKvCachePercent(raw)
   })
 
+  const lastUpdatedFormatted = computed(() => {
+    if (!lastUpdated.value) return null
+    return lastUpdated.value.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  })
+
   return {
     enabled,
     ttl,
@@ -571,6 +596,8 @@ export const useCacheStore = defineStore('cache', () => {
     dbChatHistory,
     isBackendLive,
     isFetchingBackend,
+    lastUpdated,
+    lastUpdatedFormatted,
     refreshBackendMetrics,
     queryCache,
     insertCache,

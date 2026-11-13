@@ -55,7 +55,7 @@ function goBack() {
       <div class="flex items-center gap-2.5">
         <img src="/favicon.svg" alt="LLM Cache Logo" class="w-8 h-8 shrink-0 object-contain shadow-xs" />
         <span class="font-extrabold text-xs tracking-wide text-tx-p">
-          LLM-HUST <span class="text-hust-gold text-[10px]">SOICT</span>
+          LLM-HUST
         </span>
       </div>
 

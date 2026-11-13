@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Dialog from 'primevue/dialog'
+import Select from 'primevue/select'
 import { useChatStore } from '../stores/chat'
 import { useCacheStore } from '../stores/cache'
 import { useLangStore } from '../stores/lang'
@@ -19,6 +20,7 @@ import {
   ExternalLink,
   BookOpen,
   Server,
+  Zap,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -83,7 +85,46 @@ function toggleTheme() {
     class="w-full max-w-md mx-4"
   >
     <div class="flex flex-col gap-4 py-2 text-left">
-      <!-- 1. Theme Selection -->
+      <!-- 1. Model Selection -->
+      <div class="flex flex-col gap-2 border-b border-border-p pb-3">
+        <div class="flex items-center justify-between">
+          <div>
+            <h4 class="text-xs font-bold text-tx-p flex items-center gap-1.5">
+              <Zap class="w-3.5 h-3.5 text-hust-gold" />
+              <span>Mô hình LLM</span>
+            </h4>
+            <p class="text-[10px] text-tx-s mt-0.5">Chọn mô hình suy luận vLLM để trả lời</p>
+          </div>
+          <span class="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+            vLLM
+          </span>
+        </div>
+        <Select
+          v-model="chatStore.selectedModelId"
+          :options="chatStore.models"
+          optionLabel="name"
+          optionValue="id"
+          class="w-full bg-bg-inp border-border-s text-xs px-2.5 py-1 text-tx-p rounded-xl"
+        >
+          <template #value="slotProps">
+            <div v-if="slotProps.value" class="flex items-center gap-2 truncate">
+              <Zap class="w-3.5 h-3.5 text-hust-gold shrink-0" />
+              <span class="font-bold text-xs truncate">{{ chatStore.models.find(m => m.id === slotProps.value)?.name }}</span>
+            </div>
+          </template>
+          <template #option="slotProps">
+            <div class="flex flex-col py-1 text-left">
+              <div class="flex items-center gap-2">
+                <Zap class="w-3.5 h-3.5 text-hust-gold shrink-0" />
+                <span class="font-bold text-xs text-tx-p">{{ slotProps.option.name }}</span>
+              </div>
+              <span class="text-[9px] text-tx-s mt-0.5 font-normal line-clamp-1">{{ slotProps.option.description }}</span>
+            </div>
+          </template>
+        </Select>
+      </div>
+
+      <!-- 2. Theme Selection -->
       <div class="flex items-center justify-between border-b border-border-p pb-3">
         <div>
           <h4 class="text-xs font-bold text-tx-p flex items-center gap-1.5">
@@ -219,3 +260,12 @@ function toggleTheme() {
     </div>
   </Dialog>
 </template>
+
+<style scoped>
+:deep(.p-select) {
+  border-radius: 12px;
+}
+:deep(.p-select-label) {
+  padding: 6px 10px !important;
+}
+</style>

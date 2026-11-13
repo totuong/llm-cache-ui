@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useChatStore } from '../stores/chat'
+import { useCacheStore } from '../stores/cache'
+import { useAuthStore } from '../stores/auth'
 import SidebarPanel from '../components/SidebarPanel.vue'
 import ChatHeader from '../components/ChatHeader.vue'
 import ChatWelcome from '../components/ChatWelcome.vue'
@@ -14,14 +16,23 @@ import Toast from 'primevue/toast'
 import { useToast } from 'primevue/usetoast'
 
 const chatStore = useChatStore()
+const cacheStore = useCacheStore()
+const authStore = useAuthStore()
 const toast = useToast()
 
 const showMobileSidebar = ref(false)
 const showSidebar = ref(true) // Collapsible sidebar on desktop
-const showCacheDashboard = ref(true) // Open by default to highlight the thesis metrics
+const showCacheDashboard = ref(false) // Clean, focused chat view by default
 const showAuthModal = ref(false)
 const showSettingsModal = ref(false)
 const showL2Modal = ref(false)
+
+watch(() => authStore.isAuthModalOpen, (val) => {
+  showAuthModal.value = val
+})
+watch(showAuthModal, (val) => {
+  authStore.isAuthModalOpen = val
+})
 
 onMounted(() => {
   const theme = localStorage.getItem('hust_theme') || 'dark'

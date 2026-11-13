@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useCacheStore } from '../stores/cache'
+import { useCacheStore, AUTO_REFRESH_INTERVAL_MS } from '../stores/cache'
 import { useChatStore } from '../stores/chat'
 import { useLangStore } from '../stores/lang'
-import { formatKvCache } from '../utils/formatters'
 import Slider from 'primevue/slider'
 import Toast from 'primevue/toast'
 import { useToast } from 'primevue/usetoast'
@@ -44,12 +43,8 @@ import {
   Terminal,
   Eye,
   EyeOff,
-  Power,
-  AlertCircle,
-  XCircle,
+  X,
 } from 'lucide-vue-next'
-import L2CacheConfigModal from '../components/L2CacheConfigModal.vue'
-import type { RedisConnectionTestResponse } from '../types/l2Cache'
 
 // Import Chart.js components
 import { Doughnut, Bar } from 'vue-chartjs'
@@ -76,128 +71,69 @@ const activeTab = ref<'metrics' | 'l2hub'>('metrics')
 const searchLogFilter = ref('')
 const copiedL2Yaml = ref(false)
 const copiedCli = ref(false)
+const isTestingL2 = ref(false)
 const showAuthToken = ref(false)
 const isDarkMode = ref(true)
 const activeLogView = ref<'db' | 'client'>('db')
 
-// L2 Remote Cache Real-time State
-const l2Enabled = ref(false)
-const l2Host = ref('localhost')
-const l2Port = ref(6379)
-const l2Password = ref('')
-const l2HasPassword = ref(false)
-const l2ChunkSize = ref(256)
-const l2MaxCpuSize = ref(5.0)
-const l2RemoteSerde = ref<'naive' | 'cachegen'>('naive')
-const l2Status = ref('DISABLED')
-const l2YamlServer = ref('')
-const l2LastErrorMessage = ref<string | null>(null)
-const isTestingL2 = ref(false)
-const isSavingL2 = ref(false)
-const isDisablingL2 = ref(false)
-const l2TestResult = ref<RedisConnectionTestResponse | null>(null)
-const showL2Modal = ref(false)
-
 // 4 L2 Architecture Presets
 const l2Presets = [
   {
-    name: 'Local Redis L2',
-    type: 'redis' as const,
-    host: 'localhost',
-    port: 6379,
+    name: 'Host DRAM (RAM Máy Chủ)',
+    type: 'dram' as const,
+    url: 'dram://host_ram_pool',
     chunkSize: 256,
-    cpuLimit: 5.0,
-    serde: 'naive' as const,
+    cpuLimit: 64,
     latency: '< 2 ms',
-    tag: 'Độ trễ tối thiểu (Localhost)',
+    tag: 'Độ trễ thấp nhất',
+  },
+  {
+    name: 'Local NVMe SSD',
+    type: 'nvme' as const,
+    url: '/mnt/nvme_ssd/lmcache_store',
+    chunkSize: 256,
+    cpuLimit: 16,
+    latency: '~15 ms',
+    tag: 'Chi phí tối ưu',
   },
   {
     name: 'Redis Cluster Pool',
     type: 'redis' as const,
-    host: 'cache-redis-cluster.internal',
-    port: 6379,
+    url: 'redis://cache-redis-cluster.internal:6379/0',
     chunkSize: 256,
-    cpuLimit: 16.0,
-    serde: 'naive' as const,
-    latency: '~15 ms',
+    cpuLimit: 16,
+    latency: '~25 ms',
     tag: 'Cụm GPU phân tán',
   },
   {
-    name: 'Redis CacheGen (Nén)',
-    type: 'redis' as const,
-    host: 'redis.cloud.internal',
-    port: 6379,
-    chunkSize: 256,
-    cpuLimit: 8.0,
-    serde: 'cachegen' as const,
-    latency: '~25 ms',
-    tag: 'Tiết kiệm 75% băng thông',
-  },
-  {
-    name: 'Docker / Custom Redis',
-    type: 'redis' as const,
-    host: '127.0.0.1',
-    port: 6380,
-    chunkSize: 128,
-    cpuLimit: 4.0,
-    serde: 'naive' as const,
-    latency: '~3 ms',
-    tag: 'Môi trường Container',
+    name: 'MinIO / AWS S3',
+    type: 's3' as const,
+    url: 's3://hust-lmcache-bucket/kv-pool',
+    chunkSize: 512,
+    cpuLimit: 32,
+    latency: '~80 ms',
+    tag: 'Dung lượng vô hạn',
   },
 ]
 
 function applyL2Preset(preset: (typeof l2Presets)[0]) {
-  l2Host.value = preset.host
-  l2Port.value = preset.port
-  l2ChunkSize.value = preset.chunkSize
-  l2MaxCpuSize.value = preset.cpuLimit
-  l2RemoteSerde.value = preset.serde
-  l2Enabled.value = true
+  cacheStore.l2Config.backendType = preset.type
+  cacheStore.l2Config.connectionUrl = preset.url
+  cacheStore.l2Config.chunkSize = preset.chunkSize
+  cacheStore.l2Config.localCpuMemoryLimitGb = preset.cpuLimit
+  cacheStore.saveL2Config()
   toast.add({
     severity: 'info',
-    summary: 'Đã gán Preset L2',
-    detail: `${preset.name} (${preset.host}:${preset.port})`,
-    life: 2500,
+    summary: 'Đã gán cấu hình L2',
+    detail: preset.name,
+    life: 2000,
   })
-}
-
-async function syncL2FromBackend() {
-  try {
-    const data = await cacheStore.fetchL2Config()
-    if (data) {
-      l2Enabled.value = Boolean(data.enabled)
-      l2Host.value = data.host || 'localhost'
-      l2Port.value = data.port || 6379
-      l2HasPassword.value = Boolean(data.hasPassword)
-      l2ChunkSize.value = data.chunkSize || 256
-      l2MaxCpuSize.value = data.maxLocalCpuSizeGb || 5.0
-      l2RemoteSerde.value = (data.remoteSerde as 'naive' | 'cachegen') || 'naive'
-      l2Status.value = data.status || (data.enabled ? 'ACTIVE' : 'DISABLED')
-      l2YamlServer.value = data.yamlContent || ''
-      l2LastErrorMessage.value = data.lastErrorMessage || null
-    }
-  } catch (err) {
-    console.warn('Could not sync L2 config', err)
-  }
 }
 
 async function handleTestL2Connection() {
   isTestingL2.value = true
-  l2TestResult.value = null
   try {
-    const res = await cacheStore.testL2Connection({
-      host: l2Host.value.trim(),
-      port: Number(l2Port.value),
-      password: l2Password.value || (l2HasPassword.value ? undefined : undefined),
-    })
-
-    l2TestResult.value = {
-      connected: res.success,
-      message: res.message,
-      latencyMs: res.latencyMs,
-      endpoint: `${l2Host.value}:${l2Port.value}`,
-    }
-
+    const res = await cacheStore.testL2Connection()
     if (res.success) {
       confetti({
         particleCount: 50,
@@ -214,7 +150,7 @@ async function handleTestL2Connection() {
     } else {
       toast.add({
         severity: 'error',
-        summary: 'Lỗi liên kết Redis L2',
+        summary: 'Lỗi liên kết L2',
         detail: res.message,
         life: 4000,
       })
@@ -224,105 +160,22 @@ async function handleTestL2Connection() {
   }
 }
 
-async function handleSaveL2Config() {
-  isSavingL2.value = true
-  try {
-    const updated = await cacheStore.saveL2Config({
-      enabled: l2Enabled.value,
-      storageType: 'REDIS',
-      host: l2Host.value.trim(),
-      port: Number(l2Port.value),
-      password: l2Password.value ? l2Password.value : (l2HasPassword.value ? '******' : undefined),
-      chunkSize: Number(l2ChunkSize.value),
-      maxLocalCpuSizeGb: Number(l2MaxCpuSize.value),
-      remoteSerde: l2RemoteSerde.value,
-    })
-
-    l2Status.value = updated.status || (updated.enabled ? 'ACTIVE' : 'DISABLED')
-    l2HasPassword.value = Boolean(updated.hasPassword)
-    l2Password.value = ''
-    l2YamlServer.value = updated.yamlContent || ''
-
-    confetti({
-      particleCount: 60,
-      spread: 70,
-      origin: { y: 0.6 },
-      colors: ['#10b981', '#3b82f6', '#f59e0b'],
-    })
-
-    toast.add({
-      severity: 'success',
-      summary: 'Đã lưu cấu hình L2 Storage',
-      detail: 'Cấu hình đã được ghi đè vào lmcache_vllm.yaml và áp dụng thành công!',
-      life: 3000,
-    })
-  } catch (err: any) {
-    toast.add({
-      severity: 'error',
-      summary: 'Lỗi khi lưu cấu hình L2',
-      detail: err.message || 'Không thể lưu cấu hình',
-      life: 4000,
-    })
-  } finally {
-    isSavingL2.value = false
-  }
-}
-
-async function handleDisableL2Config() {
-  if (!confirm('Bạn có chắc chắn muốn tắt L2 Remote Cache và chuyển về L1 CPU Cache nội bộ?')) return
-  isDisablingL2.value = true
-  try {
-    const updated = await cacheStore.disableL2Config()
-    l2Enabled.value = false
-    l2Status.value = 'DISABLED'
-    l2YamlServer.value = updated.yamlContent || ''
-    toast.add({
-      severity: 'info',
-      summary: 'Đã tắt L2 Cache',
-      detail: 'Hệ thống đã chuyển về L1 CPU Cache.',
-      life: 3000,
-    })
-  } catch (err: any) {
-    toast.add({
-      severity: 'error',
-      summary: 'Lỗi khi tắt L2 Cache',
-      detail: err.message || 'Không thể tắt cấu hình L2',
-      life: 4000,
-    })
-  } finally {
-    isDisablingL2.value = false
-  }
-}
-
-async function refreshL2Yaml() {
-  try {
-    const yaml = await cacheStore.fetchL2Yaml()
-    if (yaml) {
-      l2YamlServer.value = yaml
-      toast.add({
-        severity: 'info',
-        summary: 'Đã làm mới YAML',
-        detail: 'Đã tải nội dung mới nhất từ lmcache_vllm.yaml',
-        life: 2000,
-      })
-    }
-  } catch (err: any) {
-    toast.add({
-      severity: 'error',
-      summary: 'Lỗi tải YAML',
-      detail: err.message,
-      life: 3000,
-    })
-  }
+function handleSaveL2Config() {
+  cacheStore.saveL2Config()
+  toast.add({
+    severity: 'success',
+    summary: 'Đã lưu cấu hình L2 Storage',
+    detail: cacheStore.l2Config.connectionUrl,
+    life: 2500,
+  })
 }
 
 const liveL2Yaml = computed(() => {
-  if (l2YamlServer.value) return l2YamlServer.value
-  return `chunk_size: ${l2ChunkSize.value}
+  return `chunk_size: ${cacheStore.l2Config.chunkSize}
 local_device: "cuda"
-remote_url: "redis://${l2Host.value}:${l2Port.value}"
-remote_serde: "${l2RemoteSerde.value}"
-max_local_cpu_memory: ${l2MaxCpuSize.value} # GB Host RAM
+remote_url: "${cacheStore.l2Config.connectionUrl}"
+remote_serde: "torch"
+max_local_cpu_memory: ${cacheStore.l2Config.localCpuMemoryLimitGb}.0 # GB Host RAM
 max_local_disk_size: ${cacheStore.l2Config.maxDiskSizeGb}.0 # GB NVMe Disk
 eviction_policy: "${cacheStore.l2Config.evictionPolicy}"
 pin_memory: ${cacheStore.l2Config.pinMemory ? 'true' : 'false'}`
@@ -330,7 +183,7 @@ pin_memory: ${cacheStore.l2Config.pinMemory ? 'true' : 'false'}`
 
 const liveCliCommand = computed(() => {
   return `# Chạy vLLM kết hợp LMCache với tầng L2 đã cấu hình:
-export LMCACHE_CONFIG_FILE=lmcache_vllm.yaml
+export LMCACHE_CONFIG_FILE=lmcache.yaml
 vllm serve ${cacheStore.systemStatus?.llmModelName || 'Qwen/Qwen2.5-1.5B-Instruct'} \\
   --gpu-memory-utilization 0.90 \\
   --kv-cache-dtype auto`
@@ -342,7 +195,7 @@ function copyL2Yaml() {
   toast.add({
     severity: 'success',
     summary: 'Đã sao chép YAML',
-    detail: 'Nội dung file lmcache_vllm.yaml đã lưu vào Clipboard.',
+    detail: 'Mẫu cấu hình lmcache.yaml đã lưu vào Clipboard.',
     life: 2000,
   })
   setTimeout(() => (copiedL2Yaml.value = false), 2000)
@@ -360,17 +213,27 @@ function copyCliCommand() {
   setTimeout(() => (copiedCli.value = false), 2000)
 }
 
+function copyPrompt(text: string) {
+  if (!text) return
+  navigator.clipboard.writeText(text)
+  toast.add({
+    severity: 'info',
+    summary: 'Đã sao chép prompt',
+    detail: text.length > 40 ? text.substring(0, 40) + '...' : text,
+    life: 2000,
+  })
+}
+
 let timer: any = null
 
 onMounted(() => {
   const theme = localStorage.getItem('hust_theme') || 'dark'
   isDarkMode.value = theme === 'dark'
 
-  cacheStore.refreshBackendMetrics(true)
-  syncL2FromBackend()
+  cacheStore.refreshBackendMetrics()
   timer = setInterval(() => {
     cacheStore.refreshBackendMetrics()
-  }, 10000)
+  }, AUTO_REFRESH_INTERVAL_MS)
 })
 
 onUnmounted(() => {
@@ -393,6 +256,12 @@ function toggleTheme() {
 
 function handleRefresh() {
   cacheStore.refreshBackendMetrics(true)
+  toast.add({
+    severity: 'success',
+    summary: 'Đã gửi yêu cầu làm mới',
+    detail: 'Đang đồng bộ dữ liệu telemetry và bộ nhớ đệm...',
+    life: 2500,
+  })
   confetti({
     particleCount: 40,
     spread: 50,
@@ -550,26 +419,38 @@ function formatUptime(seconds?: number): string {
         </button>
       </div>
 
-      <!-- Right: Theme & Refresh Actions -->
+      <!-- Right: Sync status, Theme & Refresh Actions -->
       <div class="flex items-center gap-2.5">
+        <!-- Last updated & interval indicator -->
+        <div class="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-bg-inp border border-border-p text-[11px] font-mono text-tx-s">
+          <span class="w-2 h-2 rounded-full" :class="cacheStore.isBackendLive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'"></span>
+          <span>{{ cacheStore.isBackendLive ? 'Live API' : 'Mô phỏng' }}</span>
+          <span class="text-tx-m">|</span>
+          <Clock class="w-3 h-3 text-tx-m inline" />
+          <span>Tự động: 30p</span>
+          <span class="text-tx-m" v-if="cacheStore.lastUpdatedFormatted">({{ cacheStore.lastUpdatedFormatted }})</span>
+        </div>
+      
 
         <!-- Dark/Light Theme Toggle -->
         <button
           class="text-tx-s hover:text-tx-p p-2 rounded-xl hover:bg-bg-btn-hover border border-border-s transition-colors cursor-pointer"
+          v-tooltip.bottom="isDarkMode ? 'Chuyển sang Giao diện Sáng' : 'Chuyển sang Giao diện Tối'"
           @click="toggleTheme"
         >
           <Sun v-if="isDarkMode" class="w-4 h-4 text-hust-gold" />
           <Moon v-else class="w-4 h-4 text-accent-violet" />
         </button>
 
-        <!-- Refresh Button -->
+        <!-- Manual Refresh Button -->
         <button
-          class="bg-hust-red hover:bg-hust-red-hover text-white text-xs px-3.5 py-1.5 rounded-xl font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+          class="bg-hust-red hover:bg-hust-red-hover text-white text-xs px-3.5 py-1.5 rounded-xl font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs active:scale-95 disabled:opacity-60"
+          v-tooltip.bottom="'Tải lại dữ liệu ngay lập tức (Tự động cập nhật mỗi 30 phút)'"
           :disabled="cacheStore.isFetchingBackend"
           @click="handleRefresh"
         >
           <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': cacheStore.isFetchingBackend }" />
-          <span class="hidden md:inline">Làm mới</span>
+          <span class="hidden sm:inline">{{ cacheStore.isFetchingBackend ? 'Đang cập nhật...' : 'Làm mới' }}</span>
         </button>
       </div>
     </header>
@@ -665,7 +546,7 @@ function formatUptime(seconds?: number): string {
             </div>
             <div class="mt-2.5">
               <div class="text-2xl sm:text-3xl font-black text-tx-p font-mono tracking-tight">
-                {{ formatKvCache(cacheStore.backendStats?.kvCacheUsagePerc ?? cacheStore.vllmMetrics?.kvCacheUsagePerc) }}
+                {{ ((cacheStore.backendStats?.kvCacheUsagePerc ?? cacheStore.vllmMetrics?.kvCacheUsagePerc) ?? 0).toFixed(1) }}%
               </div>
               <p class="text-[10px] text-accent-violet mt-1 font-semibold font-mono">
                 vLLM PagedAttention Pool
@@ -793,9 +674,16 @@ function formatUptime(seconds?: number): string {
                   v-model="searchLogFilter"
                   type="text"
                   placeholder="Tìm kiếm prompt..."
-                  class="w-full bg-bg-inp border border-border-p text-tx-p text-xs px-3 py-1.5 rounded-xl pl-8 focus:outline-none focus:border-border-s"
+                  class="w-full bg-bg-inp border border-border-p text-tx-p text-xs px-3 py-1.5 rounded-xl pl-8 pr-7 focus:outline-none focus:border-border-s"
                 />
                 <Search class="w-3.5 h-3.5 text-tx-m absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <button
+                  v-if="searchLogFilter"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-tx-s hover:text-tx-p p-0.5 rounded cursor-pointer"
+                  @click="searchLogFilter = ''"
+                >
+                  <X class="w-3.5 h-3.5" />
+                </button>
               </div>
 
               <button
@@ -830,10 +718,19 @@ function formatUptime(seconds?: number): string {
                 <tr
                   v-for="item in filteredDbHistory"
                   :key="item.id"
-                  class="hover:bg-bg-btn-hover/50 transition-colors"
+                  class="hover:bg-bg-btn-hover/50 transition-colors group/row"
                 >
                   <td class="py-3 px-3 max-w-sm">
-                    <p class="font-semibold text-tx-p truncate" :title="item.prompt">{{ item.prompt }}</p>
+                    <div class="flex items-center justify-between gap-1.5">
+                      <p class="font-semibold text-tx-p truncate" :title="item.prompt">{{ item.prompt }}</p>
+                      <button
+                        class="text-tx-m hover:text-tx-p p-1 rounded hover:bg-bg-btn-hover opacity-0 group-hover/row:opacity-100 transition-opacity cursor-pointer shrink-0"
+                        v-tooltip.top="'Sao chép prompt'"
+                        @click="copyPrompt(item.prompt)"
+                      >
+                        <Copy class="w-3 h-3" />
+                      </button>
+                    </div>
                     <div class="flex items-center gap-1.5 mt-0.5">
                       <span class="text-[9px] text-hust-gold px-1.5 py-0.2 rounded bg-hust-gold/10 font-mono">
                         {{ item.model }}
@@ -920,54 +817,49 @@ function formatUptime(seconds?: number): string {
 
         <!-- L2 Storage Active Status Banner -->
         <div class="glass-panel p-5 rounded-2xl border border-border-p bg-gradient-to-r from-bg-card via-bg-inp/40 to-bg-card flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
-          <div class="space-y-1.5">
+          <div class="space-y-1">
             <div class="flex items-center gap-2">
               <span class="text-xs font-bold text-tx-m uppercase tracking-wider flex items-center gap-1.5">
                 <Network class="w-4 h-4 text-hust-gold" />
                 <span>Trạng Thái Tầng L2:</span>
               </span>
               <span
-                class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border flex items-center gap-1.5 shadow-xs font-mono"
-                :class="l2Status === 'ACTIVE' || cacheStore.l2Config.status === 'connected'
+                class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border flex items-center gap-1.5 shadow-xs"
+                :class="cacheStore.l2Config.status === 'connected'
                   ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                  : isTestingL2
+                  : cacheStore.l2Config.status === 'testing'
                   ? 'bg-accent-cyan/15 text-accent-cyan border-accent-cyan/30'
-                  : l2Status === 'ERROR'
+                  : cacheStore.l2Config.status === 'disconnected'
                   ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
-                  : 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30'"
+                  : 'bg-amber-500/15 text-amber-400 border-amber-500/30'"
               >
                 <span
                   class="w-1.5 h-1.5 rounded-full"
-                  :class="l2Status === 'ACTIVE' || cacheStore.l2Config.status === 'connected' ? 'bg-emerald-400 animate-ping' : isTestingL2 ? 'bg-accent-cyan animate-spin' : l2Status === 'ERROR' ? 'bg-rose-400' : 'bg-zinc-400'"
+                  :class="cacheStore.l2Config.status === 'connected' ? 'bg-emerald-400 animate-ping' : cacheStore.l2Config.status === 'testing' ? 'bg-accent-cyan animate-spin' : cacheStore.l2Config.status === 'disconnected' ? 'bg-rose-400' : 'bg-amber-400'"
                 ></span>
-                <span>{{ (l2Status || cacheStore.l2Config.status).toUpperCase() }}</span>
+                <span>{{ cacheStore.l2Config.status.toUpperCase() }}</span>
               </span>
             </div>
 
             <div class="flex flex-wrap items-center gap-3 pt-0.5 text-xs font-mono">
               <div class="flex items-center gap-1 text-tx-s">
-                <span>Redis URI:</span>
+                <span>URI:</span>
                 <code class="text-hust-gold bg-bg-app px-2 py-0.5 rounded border border-border-s font-bold text-[11px] truncate max-w-xs sm:max-w-md">
-                  redis://{{ l2Host }}:{{ l2Port }}
+                  {{ cacheStore.l2Config.connectionUrl }}
                 </code>
               </div>
 
-              <div v-if="l2TestResult?.latencyMs || cacheStore.l2Config.pingMs" class="flex items-center gap-1 text-emerald-400 font-bold text-[11px]">
+              <div v-if="cacheStore.l2Config.pingMs" class="flex items-center gap-1 text-emerald-400 font-bold text-[11px]">
                 <Activity class="w-3.5 h-3.5" />
-                <span>RTT Ping: {{ l2TestResult?.latencyMs || cacheStore.l2Config.pingMs }}ms</span>
+                <span>RTT: {{ cacheStore.l2Config.pingMs }}ms</span>
               </div>
-            </div>
-
-            <div v-if="l2LastErrorMessage" class="text-[11px] text-rose-400 flex items-center gap-1">
-              <AlertCircle class="w-3.5 h-3.5 shrink-0" />
-              <span>{{ l2LastErrorMessage }}</span>
             </div>
           </div>
 
           <!-- Quick Actions in Banner -->
-          <div class="flex flex-wrap items-center gap-2 self-start md:self-auto shrink-0">
+          <div class="flex items-center gap-2 self-start md:self-auto shrink-0">
             <button
-              class="border border-border-s bg-bg-inp hover:bg-bg-btn-hover text-tx-p px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+              class="border border-border-s bg-bg-inp hover:bg-bg-btn-hover text-tx-p px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
               :disabled="isTestingL2"
               @click="handleTestL2Connection"
             >
@@ -976,55 +868,13 @@ function formatUptime(seconds?: number): string {
             </button>
 
             <button
-              v-if="l2Enabled"
-              class="border border-rose-500/30 bg-rose-500/10 hover:bg-rose-600 text-rose-300 hover:text-white px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs disabled:opacity-50"
-              :disabled="isDisablingL2"
-              @click="handleDisableL2Config"
-            >
-              <Power class="w-3.5 h-3.5" />
-              <span>Tắt L2</span>
-            </button>
-
-            <button
-              class="bg-hust-red hover:bg-hust-red-hover text-white px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs disabled:opacity-50"
-              :disabled="isSavingL2"
+              class="bg-hust-red hover:bg-hust-red-hover text-white px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
               @click="handleSaveL2Config"
             >
-              <Save class="w-3.5 h-3.5" :class="{ 'animate-spin': isSavingL2 }" />
-              <span>{{ isSavingL2 ? 'Đang lưu...' : 'Lưu & Áp Dụng' }}</span>
-            </button>
-
-            <button
-              class="border border-border-s bg-bg-card hover:bg-bg-inp text-tx-s hover:text-tx-p p-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
-              v-tooltip.bottom="'Mở Modal cấu hình chi tiết'"
-              @click="showL2Modal = true"
-            >
-              <Sliders class="w-4 h-4 text-hust-gold" />
+              <Save class="w-3.5 h-3.5" />
+              <span>Lưu & Kích Hoạt</span>
             </button>
           </div>
-        </div>
-
-        <!-- Master Switch Toggle Row -->
-        <div class="glass-panel p-4 rounded-2xl border border-border-p flex items-center justify-between shadow-xs bg-bg-card/70">
-          <div class="space-y-0.5">
-            <label class="text-xs font-bold text-tx-p flex items-center gap-2">
-              <span>Kích hoạt L2 Remote Cache (Redis Backend)</span>
-              <span v-if="l2Enabled" class="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full font-mono font-bold">BẬT</span>
-              <span v-else class="text-[10px] text-zinc-400 bg-zinc-500/10 border border-zinc-500/20 px-2 py-0.5 rounded-full font-mono font-bold">TẮT</span>
-            </label>
-            <p class="text-[11px] text-tx-s">
-              Khi bật, KV Cache sẽ tự động offload xuống Redis khi bộ nhớ RAM GPU/L1 CPU đầy để chia sẻ giữa các worker
-            </p>
-          </div>
-
-          <label class="relative inline-flex items-center cursor-pointer shrink-0">
-            <input
-              type="checkbox"
-              v-model="l2Enabled"
-              class="sr-only peer"
-            />
-            <div class="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:width after:w-5 after:transition-all peer-checked:bg-hust-red"></div>
-          </label>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -1037,31 +887,32 @@ function formatUptime(seconds?: number): string {
               <div class="flex items-center justify-between border-b border-border-p pb-2.5">
                 <h3 class="text-xs font-extrabold text-tx-p uppercase tracking-wider flex items-center gap-2">
                   <Sliders class="w-4 h-4 text-hust-gold" />
-                  <span>1. Mẫu Cấu Hình Redis L2 Nhanh (1-Click Presets)</span>
+                  <span>1. Chọn Tầng Lưu Trữ L2 (1-Click Presets)</span>
                 </h3>
-                <span class="text-[10px] text-tx-s font-mono">4 Mẫu Hạ Tầng</span>
+                <span class="text-[10px] text-tx-s font-mono">4 Cấu Trúc Hỗ Trợ</span>
               </div>
 
               <!-- 4 Architecture Cards Grid -->
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <div
                   v-for="preset in l2Presets"
-                  :key="preset.name"
+                  :key="preset.type"
                   class="p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between"
-                  :class="l2Host === preset.host && l2Port === preset.port
+                  :class="cacheStore.l2Config.backendType === preset.type
                     ? 'bg-hust-gold/10 border-hust-gold shadow-xs'
                     : 'bg-bg-inp/40 border-border-s hover:bg-bg-btn-hover/60'"
                   @click="applyL2Preset(preset)"
                 >
                   <div class="flex items-center justify-between">
-                    <Cloud
+                    <component
+                      :is="preset.type === 'dram' ? Cpu : preset.type === 'nvme' ? HardDrive : preset.type === 'redis' ? Cloud : Database"
                       class="w-4 h-4"
-                      :class="l2Host === preset.host ? 'text-hust-gold' : 'text-tx-s'"
+                      :class="cacheStore.l2Config.backendType === preset.type ? 'text-hust-gold' : 'text-tx-s'"
                     />
                     <span class="text-[9px] font-mono text-emerald-400 font-bold">{{ preset.latency }}</span>
                   </div>
                   <div class="mt-2 text-left">
-                    <p class="font-bold text-xs text-tx-p truncate">{{ preset.name }}</p>
+                    <p class="font-bold text-xs text-tx-p truncate">{{ preset.name.split(' ')[0] }}</p>
                     <p class="text-[9px] text-tx-s mt-0.5 truncate">{{ preset.tag }}</p>
                   </div>
                 </div>
@@ -1069,67 +920,43 @@ function formatUptime(seconds?: number): string {
             </div>
 
             <!-- 2. Gán Liên Kết Điểm Cuối L2 & Auth Token -->
-            <div
-              class="glass-panel p-5 rounded-2xl border border-border-p space-y-4 shadow-xs transition-opacity"
-              :class="{ 'opacity-50 pointer-events-none': !l2Enabled }"
-            >
+            <div class="glass-panel p-5 rounded-2xl border border-border-p space-y-4 shadow-xs">
               <div class="flex items-center justify-between border-b border-border-p pb-2.5">
                 <h3 class="text-xs font-extrabold text-tx-p uppercase tracking-wider flex items-center gap-2">
                   <Link2 class="w-4 h-4 text-hust-gold" />
-                  <span>2. Thông Số Kết Nối Redis (Host, Port & Mật Khẩu)</span>
+                  <span>2. Gán Đường Dẫn Kết Nối Điểm Cuối (URI Endpoint)</span>
                 </h3>
-                <span class="text-[10px] text-hust-gold font-bold font-mono">BẮT BUỘC KHI BẬT</span>
+                <span class="text-[10px] text-hust-gold font-bold font-mono">BẮT BUỘC</span>
               </div>
 
-              <!-- Host & Port inputs -->
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div class="sm:col-span-2 space-y-1.5 text-xs">
-                  <label class="font-bold text-tx-p flex items-center justify-between">
-                    <span>Redis Host / IP: <span class="text-rose-400">*</span></span>
-                    <span class="text-[10px] font-mono text-tx-s">localhost hoặc IP Redis</span>
-                  </label>
-                  <div class="relative">
-                    <input
-                      v-model="l2Host"
-                      type="text"
-                      :required="l2Enabled"
-                      placeholder="localhost hoặc 192.168.1.100"
-                      class="w-full bg-bg-inp border border-border-s text-tx-p font-mono text-xs px-3.5 py-2.5 rounded-xl pl-9 focus:outline-none focus:border-hust-gold shadow-inner"
-                    />
-                    <Server class="w-4 h-4 text-hust-gold absolute left-3 top-1/2 -translate-y-1/2" />
-                  </div>
-                </div>
-
-                <div class="space-y-1.5 text-xs">
-                  <label class="font-bold text-tx-p">
-                    Port: <span class="text-rose-400">*</span>
-                  </label>
-                  <input
-                    v-model.number="l2Port"
-                    type="number"
-                    :required="l2Enabled"
-                    placeholder="6379"
-                    class="w-full bg-bg-inp border border-border-s text-tx-p font-mono text-xs px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-hust-gold shadow-inner"
-                  />
-                </div>
-              </div>
-
-              <!-- Password Input -->
-              <div class="space-y-1.5 text-xs pt-1 border-t border-border-p">
-                <div class="flex items-center justify-between">
-                  <label class="font-bold text-tx-p flex items-center gap-1.5">
-                    <span>Mật khẩu Redis (AUTH):</span>
-                    <span v-if="l2HasPassword" class="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full font-mono">
-                      (Đã có mật khẩu được lưu)
-                    </span>
-                  </label>
-                  <span class="text-[10px] text-tx-s">Để trống nếu không dùng AUTH</span>
-                </div>
+              <!-- URL Input Box with prefix icon -->
+              <div class="space-y-1.5 text-xs">
+                <label class="font-bold text-tx-p flex items-center justify-between">
+                  <span>Địa chỉ URI / Endpoint:</span>
+                  <span class="text-[10px] font-mono text-tx-s">redis:// | s3:// | /mnt/nvme</span>
+                </label>
                 <div class="relative">
                   <input
-                    v-model="l2Password"
+                    v-model="cacheStore.l2Config.connectionUrl"
+                    type="text"
+                    placeholder="Nhập đường dẫn kết nối L2 (ví dụ: redis://host:6379/0 hoặc s3://bucket/prefix)..."
+                    class="w-full bg-bg-inp border border-border-s text-tx-p font-mono text-xs px-3.5 py-2.5 rounded-xl pl-9 focus:outline-none focus:border-hust-gold shadow-inner"
+                  />
+                  <Link2 class="w-4 h-4 text-hust-gold absolute left-3 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
+
+              <!-- Optional Auth Token / Password Input -->
+              <div class="space-y-1.5 text-xs pt-1 border-t border-border-p">
+                <label class="font-bold text-tx-p flex items-center justify-between">
+                  <span>Mật mã / Secret Key / Token (Tùy chọn):</span>
+                  <span class="text-[10px] text-tx-s font-normal">Cho Redis AUTH / S3 Access</span>
+                </label>
+                <div class="relative">
+                  <input
+                    v-model="cacheStore.l2Config.authToken"
                     :type="showAuthToken ? 'text' : 'password'"
-                    :placeholder="l2HasPassword ? 'Để trống nếu giữ nguyên mật khẩu cũ' : 'Không có mật khẩu (tùy chọn)'"
+                    placeholder="Nhập token hoặc mật mã kết nối nếu có..."
                     class="w-full bg-bg-inp border border-border-s text-tx-p font-mono text-xs px-3.5 py-2 rounded-xl pr-10 focus:outline-none focus:border-hust-gold shadow-inner"
                   />
                   <button
@@ -1142,65 +969,31 @@ function formatUptime(seconds?: number): string {
                   </button>
                 </div>
               </div>
-
-              <!-- Test Connection Button & Result -->
-              <div class="p-3 bg-bg-inp/40 border border-border-s rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                <button
-                  type="button"
-                  class="border border-border-s bg-bg-inp hover:bg-bg-btn-hover text-tx-p px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50"
-                  :disabled="isTestingL2 || !l2Host"
-                  @click="handleTestL2Connection"
-                >
-                  <RefreshCw class="w-3.5 h-3.5 text-accent-cyan" :class="{ 'animate-spin': isTestingL2 }" />
-                  <span>{{ isTestingL2 ? 'Đang kiểm tra kết nối...' : '🔍 Kiểm tra kết nối Redis' }}</span>
-                </button>
-
-                <!-- Result Badge -->
-                <div v-if="l2TestResult" class="flex items-center">
-                  <div
-                    class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold border flex items-center gap-2"
-                    :class="l2TestResult.connected
-                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                      : 'bg-rose-500/15 text-rose-400 border-rose-500/30'"
-                  >
-                    <CheckCircle2 v-if="l2TestResult.connected" class="w-4 h-4 shrink-0 text-emerald-400" />
-                    <XCircle v-else class="w-4 h-4 shrink-0 text-rose-400" />
-                    <span>{{ l2TestResult.connected ? 'Kết nối thành công!' : l2TestResult.message }}</span>
-                    <span v-if="l2TestResult.connected" class="bg-emerald-500/20 px-2 py-0.5 rounded text-[11px]">
-                      Ping: {{ l2TestResult.latencyMs }}ms
-                    </span>
-                  </div>
-                </div>
-              </div>
             </div>
 
             <!-- 3. Tinh Chỉnh Tham Số (Advanced Tuning - Compact Grid) -->
-            <div
-              class="glass-panel p-5 rounded-2xl border border-border-p space-y-4 shadow-xs transition-opacity"
-              :class="{ 'opacity-50 pointer-events-none': !l2Enabled }"
-            >
+            <div class="glass-panel p-5 rounded-2xl border border-border-p space-y-4 shadow-xs">
               <div class="flex items-center justify-between border-b border-border-p pb-2.5">
                 <h3 class="text-xs font-extrabold text-tx-p uppercase tracking-wider flex items-center gap-2">
                   <Sliders class="w-4 h-4 text-hust-gold" />
-                  <span>3. Tinh Chỉnh Tham Số Hiệu Năng & Tuần Tự Hóa</span>
+                  <span>3. Tinh Chỉnh Tham Số Hiệu Năng & Hạn Ngạch</span>
                 </h3>
-                <span class="text-[10px] text-tx-s font-mono">LMCache vLLM Specs</span>
+                <span class="text-[10px] text-tx-s font-mono">Tối Ưu Hoá KV Cache</span>
               </div>
 
               <!-- Chunk Size -->
               <div class="flex items-center justify-between text-xs">
                 <div>
                   <p class="font-bold text-tx-p">Chunk Size (Tokens / Khối):</p>
-                  <p class="text-[10px] text-tx-s">Kích thước block chia nhỏ KV cache (thường là 256)</p>
+                  <p class="text-[10px] text-tx-s">Độ chi tiết khi băm khối KV Cache</p>
                 </div>
                 <div class="flex items-center gap-1.5">
                   <button
                     v-for="size in [128, 256, 512]"
                     :key="size"
-                    type="button"
                     class="px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition-all cursor-pointer"
-                    :class="l2ChunkSize === size ? 'bg-hust-red text-white border-hust-red shadow-xs' : 'bg-bg-inp border-border-s text-tx-s hover:text-tx-p'"
-                    @click="l2ChunkSize = size"
+                    :class="cacheStore.l2Config.chunkSize === size ? 'bg-hust-red text-white border-hust-red shadow-xs' : 'bg-bg-inp border-border-s text-tx-s hover:text-tx-p'"
+                    @click="cacheStore.l2Config.chunkSize = size; cacheStore.saveL2Config()"
                   >
                     {{ size }}
                   </button>
@@ -1210,27 +1003,23 @@ function formatUptime(seconds?: number): string {
               <!-- RAM Limit Slider -->
               <div class="space-y-1.5 text-xs border-t border-border-p pt-3">
                 <div class="flex justify-between items-center">
-                  <div>
-                    <p class="font-bold text-tx-p">Dung Lượng L1 CPU RAM Size (GB):</p>
-                    <p class="text-[10px] text-tx-s">Ngưỡng RAM máy chủ trước khi offload xuống L2 Redis</p>
-                  </div>
+                  <p class="font-bold text-tx-p">Giới Hạn Host DRAM (RAM Máy Chủ):</p>
                   <span class="font-mono font-bold text-hust-gold bg-bg-app px-2 py-0.5 rounded border border-border-s">
-                    {{ l2MaxCpuSize }} GB
+                    {{ cacheStore.l2Config.localCpuMemoryLimitGb }} GB
                   </span>
                 </div>
-                <Slider v-model="l2MaxCpuSize" :min="1" :max="64" :step="0.5" />
+                <Slider v-model="cacheStore.l2Config.localCpuMemoryLimitGb" :min="4" :max="128" :step="4" @change="cacheStore.saveL2Config()" />
               </div>
 
-              <!-- Serialization Format -->
+              <!-- Disk Limit Slider -->
               <div class="space-y-1.5 text-xs border-t border-border-p pt-3">
-                <label class="font-bold text-tx-p">Định Dạng Tuần Tự Hóa (remote_serde):</label>
-                <select
-                  v-model="l2RemoteSerde"
-                  class="w-full bg-bg-inp border border-border-s text-tx-p text-xs p-2.5 rounded-xl font-medium focus:outline-none focus:border-hust-gold cursor-pointer"
-                >
-                  <option value="naive">naive (Mặc định - Tốc độ cao, tuần tự hóa trực tiếp)</option>
-                  <option value="cachegen">cachegen (Nén KV cache thông minh - Tiết kiệm băng thông mạng)</option>
-                </select>
+                <div class="flex justify-between items-center">
+                  <p class="font-bold text-tx-p">Dung Lượng Đĩa NVMe / Lưu Trữ L2:</p>
+                  <span class="font-mono font-bold text-accent-cyan bg-bg-app px-2 py-0.5 rounded border border-border-s">
+                    {{ cacheStore.l2Config.maxDiskSizeGb }} GB
+                  </span>
+                </div>
+                <Slider v-model="cacheStore.l2Config.maxDiskSizeGb" :min="100" :max="4000" :step="100" @change="cacheStore.saveL2Config()" />
               </div>
 
               <!-- Eviction Policy & Pin Memory -->
@@ -1240,6 +1029,7 @@ function formatUptime(seconds?: number): string {
                   <select
                     v-model="cacheStore.l2Config.evictionPolicy"
                     class="w-full mt-1.5 bg-bg-inp border border-border-s text-tx-p text-xs p-2 rounded-xl font-medium focus:outline-none"
+                    @change="cacheStore.saveL2Config()"
                   >
                     <option value="LRU">LRU (Gần nhất)</option>
                     <option value="LFU">LFU (Tần suất)</option>
@@ -1250,10 +1040,9 @@ function formatUptime(seconds?: number): string {
                 <div>
                   <p class="font-bold text-tx-p">CUDA Pin Memory:</p>
                   <button
-                    type="button"
                     class="w-full mt-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
                     :class="cacheStore.l2Config.pinMemory ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-bg-inp text-tx-s border-border-s'"
-                    @click="cacheStore.l2Config.pinMemory = !cacheStore.l2Config.pinMemory"
+                    @click="cacheStore.l2Config.pinMemory = !cacheStore.l2Config.pinMemory; cacheStore.saveL2Config()"
                   >
                     <CheckCircle2 v-if="cacheStore.l2Config.pinMemory" class="w-3.5 h-3.5 text-emerald-400" />
                     <span>{{ cacheStore.l2Config.pinMemory ? 'Bật Pin Memory' : 'Tắt Pin Memory' }}</span>
@@ -1267,35 +1056,24 @@ function formatUptime(seconds?: number): string {
           <!-- Right Column: Artifacts, Code & Specs Matrix (5 Cols) -->
           <div class="lg:col-span-5 space-y-5">
 
-            <!-- Artifact 1: Live Generated lmcache_vllm.yaml -->
+            <!-- Artifact 1: Live Generated lmcache.yaml -->
             <div class="glass-panel p-5 rounded-2xl border border-border-p space-y-3 shadow-xs font-mono">
               <div class="flex items-center justify-between border-b border-border-p pb-2.5">
                 <div class="flex items-center gap-2">
                   <Code2 class="w-4 h-4 text-hust-gold" />
-                  <span class="text-xs font-bold text-tx-p">lmcache_vllm.yaml</span>
+                  <span class="text-xs font-bold text-tx-p">lmcache.yaml</span>
                 </div>
-                <div class="flex items-center gap-1.5">
-                  <button
-                    class="bg-bg-inp hover:bg-bg-btn-hover text-tx-s hover:text-tx-p border border-border-s px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
-                    v-tooltip.bottom="'Tải lại cấu hình YAML từ server'"
-                    @click="refreshL2Yaml"
-                  >
-                    <RefreshCw class="w-3.5 h-3.5 text-accent-cyan" />
-                    <span>Làm mới</span>
-                  </button>
-
-                  <button
-                    class="bg-bg-inp hover:bg-bg-btn-hover text-tx-s hover:text-tx-p border border-border-s px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
-                    @click="copyL2Yaml"
-                  >
-                    <Check v-if="copiedL2Yaml" class="w-3.5 h-3.5 text-emerald-400" />
-                    <Copy v-else class="w-3.5 h-3.5" />
-                    <span>{{ copiedL2Yaml ? 'Đã sao chép' : 'Sao chép YAML' }}</span>
-                  </button>
-                </div>
+                <button
+                  class="bg-bg-inp hover:bg-bg-btn-hover text-tx-s hover:text-tx-p border border-border-s px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                  @click="copyL2Yaml"
+                >
+                  <Check v-if="copiedL2Yaml" class="w-3.5 h-3.5 text-emerald-400" />
+                  <Copy v-else class="w-3.5 h-3.5" />
+                  <span>{{ copiedL2Yaml ? 'Đã sao chép' : 'Sao chép YAML' }}</span>
+                </button>
               </div>
 
-              <pre class="p-3 bg-bg-inp/90 rounded-xl border border-border-p text-xs text-hust-gold overflow-x-auto leading-relaxed max-h-56"><code>{{ liveL2Yaml }}</code></pre>
+              <pre class="p-3 bg-bg-inp/90 rounded-xl border border-border-p text-xs text-hust-gold overflow-x-auto leading-relaxed"><code>{{ liveL2Yaml }}</code></pre>
             </div>
 
             <!-- Artifact 2: Terminal Launch CLI -->
@@ -1381,12 +1159,6 @@ function formatUptime(seconds?: number): string {
         </div>
 
       </div>
-
-      <!-- Dedicated L2 Cache Config Dialog -->
-      <L2CacheConfigModal
-        v-model:visible="showL2Modal"
-        @config-updated="syncL2FromBackend"
-      />
 
     </main>
   </div>

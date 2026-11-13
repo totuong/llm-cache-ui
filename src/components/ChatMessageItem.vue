@@ -285,10 +285,10 @@ function handleRetry() {
           </span>
         </div>
 
-        <!-- Copy Action Bar -->
+        <!-- Copy & Action Bar (Visible on mobile, hover on desktop) -->
         <div 
           v-if="props.message.content" 
-          class="mt-1.5 flex items-center gap-2 select-none opacity-0 group-hover:opacity-100 transition-opacity"
+          class="mt-1.5 flex items-center gap-2 select-none opacity-80 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
         >
           <button 
             class="text-tx-s hover:text-tx-p px-2 py-1 rounded-md hover:bg-bg-btn-hover transition-colors flex items-center gap-1 text-[10px] cursor-pointer font-medium"
@@ -297,6 +297,16 @@ function handleRetry() {
             <Check v-if="copied" class="w-3.5 h-3.5 text-emerald-400" />
             <Copy v-else class="w-3.5 h-3.5" />
             <span>{{ copied ? langStore.t('copied') : langStore.t('copy') }}</span>
+          </button>
+
+          <button 
+            class="text-tx-s hover:text-hust-gold px-2 py-1 rounded-md hover:bg-bg-btn-hover transition-colors flex items-center gap-1 text-[10px] cursor-pointer font-medium disabled:opacity-50"
+            v-tooltip.bottom="'Tạo lại phản hồi này'"
+            :disabled="chatStore.isTyping"
+            @click="handleRetry"
+          >
+            <RefreshCw class="w-3 h-3" :class="{ 'animate-spin': chatStore.isTyping }" />
+            <span>{{ langStore.locale === 'vi' ? 'Tạo lại' : 'Retry' }}</span>
           </button>
         </div>
       </div>

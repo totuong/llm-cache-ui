@@ -6,6 +6,9 @@ import type {
   SystemStatusDTO,
   VllmMetricsDTO,
   ResponseObject,
+  RegisterRequest,
+  LoginRequest,
+  AuthData,
 } from '../types/api'
 
 // Base URL configuration (supports VITE_API_BASE_URL or relative '/api/v1' for Vite proxy)
@@ -22,6 +25,36 @@ const API_BASE_URL = getApiBaseUrl()
 
 const DEFAULT_HEADERS: Record<string, string> = {
   'ngrok-skip-browser-warning': '69420',
+}
+
+// 401 Unauthorized callback registration
+type UnauthorizedCallback = () => void
+let onUnauthorizedHandler: UnauthorizedCallback | null = null
+
+export function setUnauthorizedHandler(handler: UnauthorizedCallback) {
+  onUnauthorizedHandler = handler
+}
+
+export function getAuthToken(): string | null {
+  return localStorage.getItem('accessToken')
+}
+
+export function getAuthHeaders(): Record<string, string> {
+  const token = getAuthToken()
+  const headers: Record<string, string> = {
+    ...DEFAULT_HEADERS,
+  }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  return headers
+}
+
+function handle401Unauthorized() {
+  localStorage.removeItem('accessToken')
+  if (onUnauthorizedHandler) {
+    onUnauthorizedHandler()
+  }
 }
 
 /**
@@ -45,24 +78,96 @@ export async function checkBackendHealth(): Promise<boolean> {
 }
 
 /**
- * 1. Call Synchronous Chat API (/api/v1/chat)
+ * 1. Register User (/api/v1/auth/register)
+ */
+export async function registerUser(
+  request: RegisterRequest
+): Promise<AuthData> {
+  const payload: Record<string, string> = {
+    username: request.username.trim(),
+    password: request.password,
+  }
+  if (request.email && request.email.trim()) {
+    payload.email = request.email.trim()
+  }
+
+  const res = await fetch(`${API_BASE_URL}/auth/register`, {
+    method: 'POST',
+    headers: { ...DEFAULT_HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+  let json: ResponseObject<AuthData> | null = null
+  try {
+    json = await res.json()
+  } catch { }
+
+  if (!res.ok || json?.status === 'ERROR') {
+    const errorMsg = json?.message || `Đăng ký thất bại (Mã phản hồi: ${res.status})`
+    throw new Error(errorMsg)
+  }
+
+  return json!.data
+}
+
+/**
+ * 2. Login User (/api/v1/auth/login)
+ */
+export async function loginUser(
+  request: LoginRequest
+): Promise<AuthData> {
+  const res = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { ...DEFAULT_HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: request.username.trim(),
+      password: request.password,
+    }),
+  })
+
+  let json: ResponseObject<AuthData> | null = null
+  try {
+    json = await res.json()
+  } catch { }
+
+  if (!res.ok || json?.status === 'ERROR') {
+    if (res.status === 401) {
+      throw new Error(json?.message || 'Tài khoản hoặc mật khẩu không chính xác')
+    }
+    const errorMsg = json?.message || `Đăng nhập thất bại (Mã phản hồi: ${res.status})`
+    throw new Error(errorMsg)
+  }
+
+  return json!.data
+}
+
+/**
+ * 3. Call Synchronous Chat API (/api/v1/chat) 🔒
  */
 export async function sendChatRequest(
   request: ChatRequest
 ): Promise<ChatResponse> {
-  // Always sanitize model name to prevent 404 from vLLM on unknown models like 'hust-gpt-4o'
+  // Always sanitize model name to prevent 404 from vLLM on unknown models
   const modelName = (request.model && request.model.includes('Qwen'))
     ? request.model
     : 'Qwen/Qwen2.5-1.5B-Instruct'
 
   const res = await fetch(`${API_BASE_URL}/chat`, {
     method: 'POST',
-    headers: { ...DEFAULT_HEADERS, 'Content-Type': 'application/json' },
+    headers: {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
       prompt: request.prompt,
       model: modelName,
     }),
   })
+
+  if (res.status === 401) {
+    handle401Unauthorized()
+    throw new Error('Phiên đăng nhập đã hết hạn hoặc chưa xác thực (HTTP 401). Vui lòng đăng nhập lại.')
+  }
 
   if (!res.ok) {
     let errorMsg = `HTTP ${res.status}: Failed to reach LLM backend`
@@ -79,7 +184,7 @@ export async function sendChatRequest(
 }
 
 /**
- * 2. Call Real-time SSE Streaming Chat API (/api/v1/chat/stream)
+ * 4. Call Real-time SSE Streaming Chat API (/api/v1/chat/stream) 🔒
  */
 export async function streamChatRequest(
   request: ChatRequest,
@@ -88,15 +193,27 @@ export async function streamChatRequest(
   onError?: (err: Error) => void
 ) {
   try {
+    const modelName = (request.model && request.model.includes('Qwen'))
+      ? request.model
+      : 'Qwen/Qwen2.5-1.5B-Instruct'
+
     const response = await fetch(`${API_BASE_URL}/chat/stream`, {
       method: 'POST',
       headers: {
-        ...DEFAULT_HEADERS,
+        ...getAuthHeaders(),
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
       },
-      body: JSON.stringify(request),
+      body: JSON.stringify({
+        prompt: request.prompt,
+        model: modelName,
+      }),
     })
+
+    if (response.status === 401) {
+      handle401Unauthorized()
+      throw new Error('Phiên đăng nhập đã hết hạn hoặc chưa xác thực (HTTP 401). Vui lòng đăng nhập.')
+    }
 
     if (!response.ok || !response.body) {
       throw new Error(`SSE stream failed with HTTP status: ${response.status}`)
@@ -145,22 +262,76 @@ export async function streamChatRequest(
 }
 
 /**
- * 3. Fetch Chat History from PostgreSQL (/api/v1/chat/history)
+ * 5. Fetch Logged-in User's Personal Chat History (/api/v1/chat/history/me) 🔒
+ */
+export async function fetchMyChatHistory(): Promise<ChatHistory[]> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/chat/history/me`, {
+      headers: { ...getAuthHeaders() },
+    })
+
+    if (res.status === 401) {
+      handle401Unauthorized()
+      throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')
+    }
+
+    if (res.status === 403) {
+      console.warn('[Chat History] Máy chủ trả về HTTP 403 Forbidden cho /api/v1/chat/history/me (Tài khoản hiện tại chưa có quyền USER/ADMIN trên backend).')
+      return []
+    }
+
+    if (!res.ok) {
+      console.warn(`[Chat History] Máy chủ phản hồi mã ${res.status}`)
+      return []
+    }
+
+    const result: ResponseObject<ChatHistory[]> = await res.json()
+    if (result.status === 'ERROR') {
+      console.warn('[Chat History] Lỗi từ API:', result.message)
+      return []
+    }
+    return result.data || []
+  } catch (err: any) {
+    if (err?.message?.includes('401')) throw err
+    console.warn('[Chat History] Không thể đồng bộ lịch sử cá nhân:', err?.message || err)
+    return []
+  }
+}
+
+/**
+ * 6. Fetch Entire Chat History (Admin / All) (/api/v1/chat/history) 🔒
  */
 export async function fetchChatHistory(
   limit: number = 50
 ): Promise<ChatHistory[]> {
-  const res = await fetch(`${API_BASE_URL}/chat/history?limit=${limit}`, {
-    headers: { ...DEFAULT_HEADERS },
-  })
-  if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch chat history`)
-  const result: ResponseObject<ChatHistory[]> = await res.json()
-  if (result.status === 'ERROR') throw new Error(result.message)
-  return result.data || []
+  try {
+    const res = await fetch(`${API_BASE_URL}/chat/history?limit=${limit}`, {
+      headers: { ...getAuthHeaders() },
+    })
+
+    if (res.status === 401) {
+      handle401Unauthorized()
+      throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')
+    }
+
+    if (res.status === 403) {
+      console.warn('[Chat History] Máy chủ trả về HTTP 403 Forbidden cho /api/v1/chat/history (Yêu cầu quyền ADMIN trên backend).')
+      return []
+    }
+
+    if (!res.ok) return []
+    const result: ResponseObject<ChatHistory[]> = await res.json()
+    if (result.status === 'ERROR') return []
+    return result.data || []
+  } catch (err: any) {
+    if (err?.message?.includes('401')) throw err
+    console.warn('[Chat History] Không thể tải toàn bộ lịch sử:', err?.message || err)
+    return []
+  }
 }
 
 /**
- * 4. Fetch vLLM Engine Prometheus Metrics (/api/v1/metrics)
+ * 7. Fetch vLLM Engine Prometheus Metrics (/api/v1/metrics)
  */
 export async function fetchVllmMetrics(): Promise<VllmMetricsDTO> {
   const res = await fetch(`${API_BASE_URL}/metrics`, {
@@ -173,7 +344,7 @@ export async function fetchVllmMetrics(): Promise<VllmMetricsDTO> {
 }
 
 /**
- * 5. Fetch LMCache Statistics (/api/v1/cache)
+ * 8. Fetch LMCache Statistics (/api/v1/cache)
  */
 export async function fetchCacheStats(): Promise<CacheResponseDTO> {
   const res = await fetch(`${API_BASE_URL}/cache`, {
@@ -186,7 +357,7 @@ export async function fetchCacheStats(): Promise<CacheResponseDTO> {
 }
 
 /**
- * 6. Reset LMCache Statistics (/api/v1/cache - DELETE)
+ * 9. Reset LMCache Statistics (/api/v1/cache - DELETE)
  */
 export async function resetCacheStats(): Promise<void> {
   const res = await fetch(`${API_BASE_URL}/cache`, {
@@ -197,7 +368,7 @@ export async function resetCacheStats(): Promise<void> {
 }
 
 /**
- * 7. Fetch System Health & Engine Status (/api/v1/system)
+ * 10. Fetch System Health & Engine Status (/api/v1/system)
  */
 export async function fetchSystemStatus(): Promise<SystemStatusDTO> {
   const res = await fetch(`${API_BASE_URL}/system`, {

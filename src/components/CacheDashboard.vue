@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useCacheStore } from '../stores/cache'
+import { useCacheStore, AUTO_REFRESH_INTERVAL_MS } from '../stores/cache'
 import { useChatStore } from '../stores/chat'
 import { useLangStore } from '../stores/lang'
 import { formatKvCache } from '../utils/formatters'
@@ -60,10 +60,7 @@ const searchLogFilter = ref('')
 let timer: any = null
 
 onMounted(() => {
-  cacheStore.refreshBackendMetrics(true)
-  timer = setInterval(() => {
-    cacheStore.refreshBackendMetrics()
-  }, 12000)
+  cacheStore.refreshBackendMetrics()
 })
 
 onUnmounted(() => {
@@ -185,7 +182,7 @@ const doughnutChartOptions = {
           <h2 class="font-extrabold text-xs text-tx-p uppercase tracking-wider flex items-center gap-1.5">
             LMCache Monitor
           </h2>
-          <p class="text-[9px] text-tx-s font-mono truncate max-w-[180px]">
+          <p class="text-[9px] text-tx-s font-mono truncate max-w-[150px]">
             {{ cacheStore.systemStatus?.llmModelName || 'Qwen 2.5 1.5B' }}
           </p>
         </div>
@@ -194,7 +191,7 @@ const doughnutChartOptions = {
       <div class="flex items-center gap-1">
         <button
           class="text-tx-s hover:text-hust-gold p-1.5 rounded-lg hover:bg-bg-btn-hover transition-colors cursor-pointer"
-          v-tooltip.bottom="'Làm mới dữ liệu'"
+          v-tooltip.bottom="'Làm mới dữ liệu (Tự động 30 phút)'"
           :disabled="cacheStore.isFetchingBackend"
           @click="handleRefresh"
         >
@@ -203,6 +200,7 @@ const doughnutChartOptions = {
 
         <button
           class="text-tx-s hover:text-tx-p w-7 h-7 flex items-center justify-center cursor-pointer rounded-lg hover:bg-bg-btn-hover transition-colors"
+          v-tooltip.bottom="'Đóng'"
           @click="emit('close')"
         >
           <X class="w-4 h-4" />
